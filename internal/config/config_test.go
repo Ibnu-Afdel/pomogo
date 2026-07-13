@@ -23,6 +23,7 @@ func TestDefaultConfig(t *testing.T) {
 		{"Theme", cfg.Theme, "tokyo-night"},
 		{"NotificationsEnabled", cfg.NotificationsEnabled, true},
 		{"SoundEnabled", cfg.SoundEnabled, true},
+		{"PromptForNotes", cfg.PromptForNotes, true},
 	}
 
 	for _, tt := range tests {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
@@ -260,12 +261,13 @@ func TestRecordSession(t *testing.T) {
 	}()
 
 	cfg := config.Default()
+	cfg.PromptForNotes = false // Disable notes prompt for immediate save test
 	model := NewModel(cfg)
 	if model.dbStore == nil {
 		t.Fatal("expected dbStore to be initialized, got nil")
 	}
 
-	// Record a completed work session
+	// Record a completed work session (immediate save)
 	now := time.Now().Truncate(time.Second)
 	model.recordSession(timer.PhaseWork, now.Add(-25*time.Minute), now, true, 25*time.Minute)
 
@@ -298,5 +300,40 @@ func TestRecordSession(t *testing.T) {
 	}
 	if len(sessions2) != 1 {
 		t.Errorf("expected break session to be ignored, got count %d", len(sessions2))
+	}
+
+	// Test note prompting
+	cfg.PromptForNotes = true
+	model2 := NewModel(cfg)
+
+	// Trigger recordSession with PromptForNotes = true
+	model2.recordSession(timer.PhaseWork, now.Add(-25*time.Minute), now, true, 25*time.Minute)
+
+	if model2.inputMode != modeNoteInput {
+		t.Errorf("expected inputMode to be modeNoteInput, got %v", model2.inputMode)
+	}
+	if model2.pendingSession == nil {
+		t.Fatal("expected pendingSession to be set")
+	}
+
+	// Simulate entering a note and pressing enter
+	model2.textInput.SetValue("Completed feature X")
+	model2.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+
+	if model2.inputMode != modeNone {
+		t.Errorf("expected inputMode to revert to modeNone, got %v", model2.inputMode)
+	}
+
+	// Retrieve sessions from model2's store (which is the same DB file)
+	sessions3, err := model2.dbStore.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to query sessions: %v", err)
+	}
+
+	if len(sessions3) != 2 {
+		t.Fatalf("expected 2 sessions to be recorded, got %d", len(sessions3))
+	}
+	if sessions3[1].Note != "Completed feature X" {
+		t.Errorf("expected note 'Completed feature X', got %q", sessions3[1].Note)
 	}
 }

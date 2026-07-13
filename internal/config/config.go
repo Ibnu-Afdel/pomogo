@@ -25,6 +25,9 @@ type Config struct {
 	// Notifications
 	NotificationsEnabled bool `toml:"notifications_enabled"`
 	SoundEnabled         bool `toml:"sound_enabled"`
+
+	// Notes
+	PromptForNotes bool `toml:"prompt_for_notes"`
 }
 
 // Default returns a Config with sensible defaults (no file required).
@@ -37,6 +40,7 @@ func Default() *Config {
 		Theme:                   "tokyo-night",
 		NotificationsEnabled:    true,
 		SoundEnabled:            true,
+		PromptForNotes:          true,
 	}
 }
 
@@ -169,6 +173,9 @@ notifications_enabled = true
 
 # Enable sound on session transitions via canberra-gtk-play (default: true)
 sound_enabled = true
+
+# Prompt for a brief note when completing a work session (default: true)
+prompt_for_notes = true
 `
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

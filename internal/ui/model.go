@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -35,6 +36,14 @@ var bigDigits = [10][5]string{
 // bigColon[row] is row `row` of the ":" separator. Each row is exactly 2 visible chars.
 var bigColon = [5]string{"  ", " ●", "  ", " ●", "  "}
 
+type inputModeType int
+
+const (
+	modeNone inputModeType = iota
+	modeTaskInput
+	modeNoteInput
+)
+
 // Model is the main Bubble Tea model for the PomoGo TUI.
 type Model struct {
 	session *timer.Session
@@ -49,6 +58,11 @@ type Model struct {
 	restorePending bool
 	showHelp       bool
 	statusMessage  string
+
+	textInput      textinput.Model
+	inputMode      inputModeType
+	currentTask    string
+	pendingSession *store.Session
 }
 
 // NewModel creates a new TUI model.
@@ -60,6 +74,9 @@ func NewModel(cfg *config.Config) *Model {
 	if err != nil {
 		statusMsg = fmt.Sprintf("database error: %v", err)
 	}
+
+	ti := textinput.New()
+	ti.Width = 30
 
 	return &Model{
 		session: timer.NewSession(
@@ -77,6 +94,8 @@ func NewModel(cfg *config.Config) *Model {
 		dbStore:        st,
 		restorePending: restore.CanRestore(),
 		statusMessage:  statusMsg,
+		textInput:      ti,
+		inputMode:      modeNone,
 	}
 }
 
@@ -91,8 +110,6 @@ func (m *Model) Init() tea.Cmd {
 // Update handles messages and updates the model (required by tea.Model).
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		return m.handleKeypress(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -112,6 +129,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.session.IsRunning && !m.session.IsPaused {
 			return m, m.tick1s()
 		}
+		return m, nil
+	}
+
+	if m.inputMode != modeNone {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "esc":
+				if m.inputMode == modeNoteInput && m.pendingSession != nil {
+					if err := m.dbStore.SaveSession(m.pendingSession); err != nil {
+						m.statusMessage = fmt.Sprintf("database error: %v", err)
+					}
+					m.pendingSession = nil
+				}
+				m.inputMode = modeNone
+				m.textInput.Blur()
+				return m, nil
+			case "enter":
+				val := strings.TrimSpace(m.textInput.Value())
+				if m.inputMode == modeTaskInput {
+					m.currentTask = val
+				} else if m.inputMode == modeNoteInput && m.pendingSession != nil {
+					m.pendingSession.Note = val
+					if err := m.dbStore.SaveSession(m.pendingSession); err != nil {
+						m.statusMessage = fmt.Sprintf("database error: %v", err)
+					}
+					m.pendingSession = nil
+				}
+				m.inputMode = modeNone
+				m.textInput.Blur()
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		return m.handleKeypress(msg)
 	case tea.QuitMsg:
 		return m, tea.Quit
 	}
@@ -122,6 +179,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) View() string {
 	if m.width < 50 || m.height < 16 {
 		return "Terminal too small — minimum 50 × 16.\n"
+	}
+
+	if m.inputMode != modeNone {
+		return m.renderInputScreen()
 	}
 
 	if m.showHelp {
@@ -186,6 +247,13 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.session.Skip()
 			m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
 			m.afterTransition(true)
+		}
+	case "t":
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeTaskInput
+			m.textInput.SetValue(m.currentTask)
+			m.textInput.Placeholder = "Enter current task..."
+			m.textInput.Focus()
 		}
 	case "r":
 		m.session.Reset()
@@ -288,8 +356,13 @@ func (m *Model) renderTimerScreen() string {
 
 	// Hint line
 	hints := lipgloss.NewStyle().Foreground(muted).Render(
-		"s start  ·  space pause  ·  n skip  ·  r reset  ·  ? help  ·  q quit",
+		"s start  ·  space pause  ·  n skip  ·  t task  ·  r reset  ·  ? help  ·  q quit",
 	)
+
+	taskLine := ""
+	if m.currentTask != "" {
+		taskLine = lipgloss.NewStyle().Foreground(muted).Italic(true).Render("Task: " + m.currentTask)
+	}
 
 	var lines []string
 	lines = append(lines, "")
@@ -299,6 +372,9 @@ func (m *Model) renderTimerScreen() string {
 	lines = append(lines, "")
 	lines = append(lines, center(label))
 	lines = append(lines, center(dots))
+	if taskLine != "" {
+		lines = append(lines, center(taskLine))
+	}
 	lines = append(lines, center(status))
 	lines = append(lines, "")
 	lines = append(lines, bar)
@@ -438,17 +514,51 @@ func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.
 
 	sess := &store.Session{
 		Type:         "work",
-		Task:         "", // Will be implemented in P2.3
-		Note:         "", // Will be implemented in P2.3
+		Task:         m.currentTask,
 		StartedAt:    startedAt,
 		EndedAt:      endedAt,
 		Completed:    completed,
 		DurationSecs: int(duration.Seconds()),
 	}
 
-	if err := m.dbStore.SaveSession(sess); err != nil {
-		m.statusMessage = fmt.Sprintf("database error: %v", err)
+	if m.cfg.PromptForNotes {
+		m.pendingSession = sess
+		m.inputMode = modeNoteInput
+		m.textInput.SetValue("")
+		m.textInput.Placeholder = "Enter session note (Enter to skip)..."
+		m.textInput.Focus()
+	} else {
+		if err := m.dbStore.SaveSession(sess); err != nil {
+			m.statusMessage = fmt.Sprintf("database error: %v", err)
+		}
 	}
+}
+
+func (m *Model) renderInputScreen() string {
+	color := lipgloss.Color(m.theme.Accent.String())
+	title := "Set Current Task"
+	if m.inputMode == modeNoteInput {
+		color = lipgloss.Color(m.theme.Work.String())
+		title = "Session Note"
+	}
+
+	rows := []string{
+		lipgloss.NewStyle().Foreground(color).Bold(true).Render(title),
+		"",
+		m.textInput.View(),
+		"",
+		lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String())).Render("enter save  ·  esc cancel"),
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(color).
+		Padding(1, 4).
+		Width(40).
+		Align(lipgloss.Center).
+		Render(strings.Join(rows, "\n"))
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m *Model) writeState() {
