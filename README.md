@@ -30,6 +30,7 @@ go build -o pomogo ./cmd/pomogo
 ```sh
 pomogo              # start the timer
 pomogo config init  # write a default config file
+pomogo stats        # view focus statistics (use --week or --month)
 pomogo version
 ```
 
@@ -40,6 +41,8 @@ pomogo version
 | `s` | Start the queued session |
 | `space` | Pause / resume |
 | `n` | Skip to next phase |
+| `t` | Set current task description |
+| `tab` | Toggle focus statistics view |
 | `r` | Reset |
 | `?` | Help overlay |
 | `q` / `ctrl+c` | Quit |
@@ -65,6 +68,7 @@ theme = "tokyo-night"   # tokyo-night | catppuccin | gruvbox
 
 notifications_enabled = true
 sound_enabled = true
+prompt_for_notes = true  # prompt for a brief note on session completion
 ```
 
 ## Notifications & Sound
