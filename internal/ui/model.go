@@ -14,6 +14,7 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/notify"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
+	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
@@ -63,6 +64,7 @@ type Model struct {
 	inputMode      inputModeType
 	currentTask    string
 	pendingSession *store.Session
+	showStats      bool
 }
 
 // NewModel creates a new TUI model.
@@ -193,6 +195,10 @@ func (m *Model) View() string {
 		return m.renderRestorePrompt()
 	}
 
+	if m.showStats {
+		return m.renderStatsScreen()
+	}
+
 	return m.renderTimerScreen()
 }
 
@@ -254,6 +260,10 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.SetValue(m.currentTask)
 			m.textInput.Placeholder = "Enter current task..."
 			m.textInput.Focus()
+		}
+	case "tab":
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.showStats = !m.showStats
 		}
 	case "r":
 		m.session.Reset()
@@ -406,6 +416,8 @@ func (m *Model) renderHelpOverlay() string {
 		key("s") + "            " + "Start the queued session",
 		key("space") + "        " + "Pause / resume",
 		key("n") + "            " + "Skip to next phase",
+		key("t") + "            " + "Set current task",
+		key("tab") + "          " + "Toggle statistics view",
 		key("r") + "            " + "Reset and clear state",
 		key("q") + " / " + key("ctrl+c") + "   " + "Quit (state saved if running)",
 		"",
@@ -532,6 +544,128 @@ func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.
 			m.statusMessage = fmt.Sprintf("database error: %v", err)
 		}
 	}
+}
+
+func (m *Model) getStats() *stats.Stats {
+	now := time.Now()
+	if m.dbStore == nil {
+		return stats.Calculate(nil, now)
+	}
+	// Query sessions for the last 365 days
+	start := now.AddDate(-1, 0, 0)
+	sessions, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour))
+	if err != nil {
+		return stats.Calculate(nil, now)
+	}
+	return stats.Calculate(sessions, now)
+}
+
+func weekBarGraph(weekDays [7]stats.DayStats, color, muted lipgloss.Color) string {
+	maxVal := 0
+	for _, wd := range weekDays {
+		if wd.Count > maxVal {
+			maxVal = wd.Count
+		}
+	}
+
+	var sb strings.Builder
+	for i, wd := range weekDays {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		
+		weekdayName := wd.Date.Format("Mon")
+		sb.WriteString(lipgloss.NewStyle().Foreground(muted).Render(weekdayName + "  "))
+
+		barLen := wd.Count
+		if barLen > 0 {
+			bar := strings.Repeat("█", barLen)
+			sb.WriteString(lipgloss.NewStyle().Foreground(color).Render(bar))
+		} else {
+			sb.WriteString(lipgloss.NewStyle().Foreground(muted).Render("░"))
+		}
+		
+		sb.WriteString(fmt.Sprintf(" %d", wd.Count))
+	}
+	return sb.String()
+}
+
+func (m *Model) renderStatsScreen() string {
+	accent := lipgloss.Color(m.theme.Accent.String())
+	muted := lipgloss.Color(m.theme.Muted.String())
+	color := lipgloss.Color(m.theme.Work.String())
+
+	textW := m.width - 12
+	if textW > 68 {
+		textW = 68
+	}
+	if textW < 34 {
+		textW = 34
+	}
+
+	center := func(s string) string {
+		return lipgloss.NewStyle().Width(textW).Align(lipgloss.Center).Render(s)
+	}
+
+	s := m.getStats()
+
+	// Today stats
+	todayStr := fmt.Sprintf("Today: %d sessions (%d mins focused)", s.TodayCount, s.TodayMinutes)
+	
+	// Streak stats
+	streakStr := fmt.Sprintf("Streak: %d days (Best: %d days)", s.CurrentStreak, s.BestStreak)
+	
+	// Month stats
+	monthStr := fmt.Sprintf("This Month: %d sessions (Rate: %.0f%%)", s.MonthCount, s.CompletionRate*100)
+
+	// Week graph title
+	graphTitle := lipgloss.NewStyle().Foreground(accent).Bold(true).Render("Weekly Focus Activity")
+	graph := weekBarGraph(s.WeekDays, color, muted)
+
+	// Hints
+	hints := lipgloss.NewStyle().Foreground(muted).Render("Tab timer  ·  ? help  ·  q quit")
+
+	var lines []string
+	lines = append(lines, "")
+	lines = append(lines, center(lipgloss.NewStyle().Foreground(color).Bold(true).Render("Focus Statistics")))
+	lines = append(lines, "")
+	lines = append(lines, center(todayStr))
+	lines = append(lines, center(streakStr))
+	lines = append(lines, center(monthStr))
+	lines = append(lines, "")
+	lines = append(lines, center(graphTitle))
+	lines = append(lines, "")
+	
+	// Center the bar graph block
+	graphLines := strings.Split(graph, "\n")
+	maxLineLen := 0
+	for _, l := range graphLines {
+		length := lipgloss.Width(l)
+		if length > maxLineLen {
+			maxLineLen = length
+		}
+	}
+	pad := (textW - maxLineLen) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	var paddedGraphLines []string
+	for _, l := range graphLines {
+		paddedGraphLines = append(paddedGraphLines, strings.Repeat(" ", pad)+l)
+	}
+	lines = append(lines, strings.Join(paddedGraphLines, "\n"))
+	
+	lines = append(lines, "")
+	lines = append(lines, center(hints))
+	lines = append(lines, "")
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 4).
+		Render(strings.Join(lines, "\n"))
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m *Model) renderInputScreen() string {

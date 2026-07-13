@@ -6,9 +6,14 @@ import (
 	"log"
 	"os"
 
+	"strings"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/stats"
+	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
 )
 
@@ -30,6 +35,8 @@ func main() {
 		handleVersion()
 	case "config":
 		handleConfig()
+	case "stats":
+		handleStats()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -89,12 +96,73 @@ func handleHelp() {
 	fmt.Println("Commands:")
 	fmt.Println("  version            Show version information")
 	fmt.Println("  config init        Create a default config file")
+	fmt.Println("  stats              Show focus statistics")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
 	fmt.Println()
 	fmt.Println("Configuration file: ~/.config/pomogo/config.toml")
 	fmt.Println("State file: $XDG_RUNTIME_DIR/pomogo/state.json")
+}
+
+func handleStats() {
+	statsCmd := flag.NewFlagSet("stats", flag.ExitOnError)
+	weekFlag := statsCmd.Bool("week", false, "Show weekly activity")
+	monthFlag := statsCmd.Bool("month", false, "Show monthly summary")
+
+	if err := statsCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	start := now.AddDate(-1, 0, 0)
+	sessions, err := st.GetSessions(start, now.Add(24*time.Hour))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
+		os.Exit(1)
+	}
+
+	s := stats.Calculate(sessions, now)
+
+	if *weekFlag {
+		fmt.Println("Weekly Focus Activity:")
+		fmt.Println("----------------------")
+		for _, wd := range s.WeekDays {
+			bar := ""
+			if wd.Count > 0 {
+				bar = strings.Repeat("█", wd.Count)
+			} else {
+				bar = "░"
+			}
+			fmt.Printf("%s  %-10s %d\n", wd.Date.Format("Mon"), bar, wd.Count)
+		}
+		fmt.Println()
+		fmt.Printf("Total Week Completed: %d sessions\n", s.WeekCount)
+		return
+	}
+
+	if *monthFlag {
+		fmt.Println("Monthly Focus Summary:")
+		fmt.Println("----------------------")
+		fmt.Printf("This Month Completed: %d sessions\n", s.MonthCount)
+		fmt.Printf("Focus Completion Rate: %.0f%%\n", s.CompletionRate*100)
+		return
+	}
+
+	fmt.Println("PomoGo Focus Statistics:")
+	fmt.Println("------------------------")
+	fmt.Printf("Today Completed:   %d sessions (%d mins focused)\n", s.TodayCount, s.TodayMinutes)
+	fmt.Printf("Current Streak:    %d days\n", s.CurrentStreak)
+	fmt.Printf("Best Streak:       %d days\n", s.BestStreak)
+	fmt.Printf("Monthly Completed: %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
 }
 
 func init() {
