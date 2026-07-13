@@ -1,0 +1,51 @@
+run:
+  deadline: 5m
+  timeout: 5m
+  tests: true
+  build-tags: []
+  skip-dirs:
+    - vendor
+    - .git
+    - .github
+
+issues:
+  exclude-use-default: true
+  exclude:
+    # Allow package comments
+    - "^G302:"
+    - "^G304:"
+
+linters:
+  enable:
+    - deadcode
+    - errcheck
+    - gocritic
+    - gofmt
+    - goimports
+    - golint
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck
+    - whitespace
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/Ibnu-Afdel/pomogo
+  gocritic:
+    enabled-checks:
+      - diagnostic
+      - style
+      - performance
+      - opinionated
+  staticcheck:
+    go: "1.26"
+  misspell:
+    locale: US
