@@ -36,7 +36,7 @@ func Default() *Config {
 		SessionsBeforeLongBreak: 4,
 		Theme:                   "tokyo-night",
 		NotificationsEnabled:    true,
-		SoundEnabled:            false,
+		SoundEnabled:            true,
 	}
 }
 
@@ -153,8 +153,8 @@ theme = "tokyo-night"
 # Enable notifications on session transitions (default: true)
 notifications_enabled = true
 
-# Enable sound on notifications (default: false)
-sound_enabled = false
+# Enable sound on session transitions via canberra-gtk-play (default: true)
+sound_enabled = true
 `
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

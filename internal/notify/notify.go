@@ -7,13 +7,11 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
-const soundDir = "/usr/share/sounds/freedesktop/stereo/"
+// soundEventComplete is the canberra event ID played when a work session ends (entering a break).
+const soundEventComplete = "complete"
 
-// soundComplete plays when a work session ends (entering a break).
-const soundComplete = soundDir + "complete.oga"
-
-// soundBell plays when a break ends (entering a work session).
-const soundBell = soundDir + "bell.oga"
+// soundEventBell is the canberra event ID played when a break ends (entering a work session).
+const soundEventBell = "bell"
 
 // Notifier sends system notifications and plays sounds for Pomodoro events.
 type Notifier struct {
@@ -27,12 +25,13 @@ func NewNotifier(enabled, soundEnabled bool) *Notifier {
 }
 
 // NotifyTransition sends a notification and plays a sound on a session transition.
+// Sound and notifications are independent: each respects its own enabled flag.
 func (n *Notifier) NotifyTransition(state timer.SessionState, phase timer.SessionPhase) error {
+	n.playSound(state)
 	if !n.enabled {
 		return nil
 	}
 	title, message, urgency := n.messageForTransition(state, phase)
-	n.playSound(state)
 	return n.send(title, message, urgency)
 }
 
@@ -62,32 +61,30 @@ func (n *Notifier) messageForTransition(state timer.SessionState, phase timer.Se
 	return
 }
 
-// playSound plays a sound non-blocking. Silent if sound is disabled,
-// the file is missing, or no suitable player is found.
+// playSound plays a canberra event sound non-blocking. Silent if sound is disabled
+// or canberra-gtk-play is unavailable.
 func (n *Notifier) playSound(state timer.SessionState) {
 	if !n.soundEnabled {
 		return
 	}
-	var file string
+	var eventID string
 	switch state {
 	case timer.StateShortBreak, timer.StateLongBreak:
-		file = soundComplete // work done → entering break
+		eventID = soundEventComplete // work done → entering break
 	case timer.StateWork:
-		file = soundBell // break done → back to work
+		eventID = soundEventBell // break done → back to work
 	default:
 		return
 	}
 
-	// Try players in preference order; run in background so TUI doesn't block.
-	for _, player := range []string{"paplay", "pw-play"} {
-		if path, err := exec.LookPath(player); err == nil {
-			cmd := exec.Command(path, file)
-			cmd.Stdout = nil
-			cmd.Stderr = nil
-			go func() { _ = cmd.Run() }()
-			return
-		}
+	path, err := exec.LookPath("canberra-gtk-play")
+	if err != nil {
+		return
 	}
+	cmd := exec.Command(path, "-i", eventID)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	go func() { _ = cmd.Run() }()
 }
 
 func (n *Notifier) send(title, message, urgency string) error {
