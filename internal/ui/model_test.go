@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -237,5 +238,65 @@ func BenchmarkGetDurationForPhase(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = model.getDurationForPhase()
+	}
+}
+
+func TestRecordSession(t *testing.T) {
+	// Set XDG_DATA_HOME to a temp directory so we don't overwrite the real DB
+	tempDir, err := os.MkdirTemp("", "pomogo-ui-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", tempDir)
+	defer func() {
+		if oldXDGDataHome == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+		}
+	}()
+
+	cfg := config.Default()
+	model := NewModel(cfg)
+	if model.dbStore == nil {
+		t.Fatal("expected dbStore to be initialized, got nil")
+	}
+
+	// Record a completed work session
+	now := time.Now().Truncate(time.Second)
+	model.recordSession(timer.PhaseWork, now.Add(-25*time.Minute), now, true, 25*time.Minute)
+
+	// Retrieve sessions from dbStore
+	sessions, err := model.dbStore.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to query sessions: %v", err)
+	}
+
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session to be recorded, got %d", len(sessions))
+	}
+
+	got := sessions[0]
+	if got.Type != "work" {
+		t.Errorf("expected type 'work', got %q", got.Type)
+	}
+	if !got.Completed {
+		t.Errorf("expected completed to be true")
+	}
+	if got.DurationSecs != 1500 {
+		t.Errorf("expected duration_secs to be 1500, got %d", got.DurationSecs)
+	}
+
+	// Verify that break sessions are NOT recorded
+	model.recordSession(timer.PhaseShortBreak, now, now.Add(5*time.Minute), true, 5*time.Minute)
+	sessions2, err := model.dbStore.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to query sessions: %v", err)
+	}
+	if len(sessions2) != 1 {
+		t.Errorf("expected break session to be ignored, got count %d", len(sessions2))
 	}
 }

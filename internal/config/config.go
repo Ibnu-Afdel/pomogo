@@ -54,6 +54,20 @@ func ConfigFilePath() string {
 	return filepath.Join(XDGConfigDir(), "config.toml")
 }
 
+// XDGDataDir returns the XDG data directory path for PomoGo.
+func XDGDataDir() string {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		dataHome = filepath.Join(os.Getenv("HOME"), ".local/share")
+	}
+	return filepath.Join(dataHome, "pomogo")
+}
+
+// DBFilePath returns the path to the sqlite database.
+func DBFilePath() string {
+	return filepath.Join(XDGDataDir(), "pomogo.db")
+}
+
 // Load loads the configuration from the config file.
 // If the file does not exist, returns the default configuration.
 // If the file exists but is invalid, returns an error.

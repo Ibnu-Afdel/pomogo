@@ -13,6 +13,7 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/notify"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
+	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
@@ -44,6 +45,7 @@ type Model struct {
 
 	notifier       *notify.Notifier
 	stateManager   *statefile.Manager
+	dbStore        *store.Store
 	restorePending bool
 	showHelp       bool
 	statusMessage  string
@@ -53,6 +55,11 @@ type Model struct {
 func NewModel(cfg *config.Config) *Model {
 	th := theme.Get(cfg.Theme)
 	manager, _ := statefile.NewManager()
+	st, err := store.New(config.DBFilePath())
+	var statusMsg string
+	if err != nil {
+		statusMsg = fmt.Sprintf("database error: %v", err)
+	}
 
 	return &Model{
 		session: timer.NewSession(
@@ -67,7 +74,9 @@ func NewModel(cfg *config.Config) *Model {
 		height:         24,
 		notifier:       notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
 		stateManager:   manager,
+		dbStore:        st,
 		restorePending: restore.CanRestore(),
+		statusMessage:  statusMsg,
 	}
 }
 
@@ -89,7 +98,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case tickMsg:
 		if m.session.IsRunning && !m.session.IsPaused {
+			prevPhase := m.session.Phase
+			startedAt := m.session.StartedAt
+			endsAt := m.session.EndsAt
+			duration := m.getDurationForPhase()
+
 			if m.session.Tick(timer.RealClock{}) {
+				m.recordSession(prevPhase, startedAt, endsAt, true, duration)
 				m.afterTransition(true)
 				return m, nil
 			}
@@ -165,7 +180,11 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "n":
 		if m.session.IsRunning || m.session.IsPaused {
+			prevPhase := m.session.Phase
+			startedAt := m.session.StartedAt
+			duration := m.getDurationForPhase()
 			m.session.Skip()
+			m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
 			m.afterTransition(true)
 		}
 	case "r":
@@ -406,6 +425,29 @@ func (m *Model) afterTransition(sendNotification bool) {
 	m.writeState()
 	if sendNotification && m.notifier != nil {
 		_ = m.notifier.NotifyTransition(m.session.State, m.session.Phase)
+	}
+}
+
+func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.Time, completed bool, duration time.Duration) {
+	if m.dbStore == nil {
+		return
+	}
+	if phase != timer.PhaseWork {
+		return
+	}
+
+	sess := &store.Session{
+		Type:         "work",
+		Task:         "", // Will be implemented in P2.3
+		Note:         "", // Will be implemented in P2.3
+		StartedAt:    startedAt,
+		EndedAt:      endedAt,
+		Completed:    completed,
+		DurationSecs: int(duration.Seconds()),
+	}
+
+	if err := m.dbStore.SaveSession(sess); err != nil {
+		m.statusMessage = fmt.Sprintf("database error: %v", err)
 	}
 }
 
