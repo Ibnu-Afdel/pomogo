@@ -1,0 +1,12 @@
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+.coverprofile
+PIPELINE.md
+plan.md
