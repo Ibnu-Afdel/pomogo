@@ -1,114 +1,89 @@
 # PomoGo
 
-**A keyboard-first Pomodoro timer for Linux terminals.**
+A keyboard-driven Pomodoro timer for Linux terminals.
 
-Single static binary. No daemon. No config required. Integrates with Waybar, tmux, and
-Neovim via a runtime state file — coming in Phase 3.
+Single binary. No daemon. No config required to start.
 
-<!-- demo GIF: run `vhs contrib/demo.tape` to regenerate -->
+<p>
+  <img src="assets/running.png" alt="Work session running" width="48%">
+  <img src="assets/paused.png" alt="Work session paused" width="48%">
+</p>
 
 ## Install
-
-**Download** the latest binary from the [Releases](https://github.com/Ibnu-Afdel/pomogo/releases) page,
-or build from source:
 
 ```sh
 go install github.com/Ibnu-Afdel/pomogo/cmd/pomogo@latest
 ```
 
-Or clone and build:
+Or grab a pre-built binary from the [Releases](https://github.com/Ibnu-Afdel/pomogo/releases) page.
+
+Build from source:
 
 ```sh
 git clone https://github.com/Ibnu-Afdel/pomogo
 cd pomogo
 go build -o pomogo ./cmd/pomogo
-./pomogo
 ```
 
 ## Usage
 
 ```sh
-pomogo            # open the timer
-pomogo version    # show version
-pomogo config init  # write a commented default config file
-pomogo help       # show command list
+pomogo              # start the timer
+pomogo config init  # write a default config file
+pomogo version
 ```
 
-### Keybindings
+### Keys
 
 | Key | Action |
 |---|---|
-| `s` | Start the queued work or break session |
+| `s` | Start the queued session |
 | `space` | Pause / resume |
 | `n` | Skip to next phase |
-| `r` | Reset and clear runtime state |
-| `?` | Toggle help overlay |
-| `q` / `ctrl+c` | Quit (state saved if a session is running) |
+| `r` | Reset |
+| `?` | Help overlay |
+| `q` / `ctrl+c` | Quit |
 
-When a running session is interrupted, PomoGo leaves a state file behind. On the next
-launch it offers a one-key restore prompt.
+If PomoGo closes mid-session, it offers a one-key restore prompt on next launch.
 
 ## Configuration
 
-PomoGo works with zero config. To create an editable default file:
+Works out of the box. To create an editable config:
 
 ```sh
 pomogo config init
+# writes ~/.config/pomogo/config.toml
 ```
 
-Config path: `~/.config/pomogo/config.toml`
-
 ```toml
-work_duration = 25               # minutes
+work_duration = 25
 short_break_duration = 5
 long_break_duration = 15
 sessions_before_long_break = 4
-theme = "tokyo-night"            # tokyo-night | catppuccin | gruvbox
+
+theme = "tokyo-night"   # tokyo-night | catppuccin | gruvbox
+
 notifications_enabled = true
-sound_enabled = false
+sound_enabled = true
 ```
 
-## Themes
+## Notifications & Sound
 
-Three built-in themes selectable via `theme` in the config:
+Notifications use `notify-send` — works with Mako, dunst, and any XDG-compliant daemon.
+Sound plays via `canberra-gtk-play` (available on most GTK-based desktops and Wayland compositors that ship libcanberra). Both degrade silently if the tool is absent.
 
-| Name | Style |
-|---|---|
-| `tokyo-night` | Dark, neon accents (default) |
-| `catppuccin` | Light pastels |
-| `gruvbox` | Warm earth tones |
+`notifications_enabled` and `sound_enabled` are independent toggles.
 
-## Runtime State File
-
-While a session is active, PomoGo writes:
-
-```
-$XDG_RUNTIME_DIR/pomogo/state.json   (fallback: ~/.cache/pomogo/state.json)
-```
-
-The file is written atomically on every state change and removed on clean exit. It is the
-integration contract for Waybar, tmux, and Neovim widgets (Phase 3). Schema documented in
-`docs/02-architecture.md`.
-
-## Notifications
-
-Session transitions send a native desktop notification via `notify-send`. Works with Mako
-and dunst out of the box. If `notify-send` is absent the app runs silently.
-
-## Generating the Demo GIF
-
-Requires [VHS](https://github.com/charmbracelet/vhs):
-
-```sh
-vhs contrib/demo.tape
-```
+<p>
+  <img src="assets/short-break.png" alt="Short break notification" width="32%">
+  <img src="assets/long-break.png" alt="Long break notification" width="32%">
+  <img src="assets/break-over.png" alt="Focus time notification" width="32%">
+</p>
 
 ## Development
 
 ```sh
 go test ./...
-go build -o pomogo ./cmd/pomogo
 golangci-lint run
+go build -o pomogo ./cmd/pomogo
 ```
-
-Phase roadmap and task tracking: see `PIPELINE.md`.
