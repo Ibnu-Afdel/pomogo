@@ -14,14 +14,14 @@ import (
 
 // State represents the serialized state of a Pomodoro session.
 type State struct {
-	SessionState  string    `json:"state"`          // "idle", "work", "short_break", "long_break"
-	SessionType   string    `json:"session_type"`   // "work", "short_break", "long_break"
-	EndsAt        int64     `json:"ends_at"`        // Unix timestamp when current session ends
-	Paused        bool      `json:"paused"`         // Whether session is paused
-	RemainingSecs int       `json:"remaining_secs"` // Seconds remaining in current session
-	PID            int       `json:"pid"`            // Process ID of pomogo app
-	SessionCount  int       `json:"session_count"`  // Total sessions completed
-	UpdatedAt     int64     `json:"updated_at"`     // Timestamp of last update
+	SessionState  string `json:"state"`          // "idle", "work", "short_break", "long_break"
+	SessionType   string `json:"session_type"`   // "work", "short_break", "long_break"
+	EndsAt        int64  `json:"ends_at"`        // Unix timestamp when current session ends
+	Paused        bool   `json:"paused"`         // Whether session is paused
+	RemainingSecs int    `json:"remaining_secs"` // Seconds remaining in current session
+	PID           int    `json:"pid"`            // Process ID of pomogo app
+	SessionCount  int    `json:"session_count"`  // Total sessions completed
+	UpdatedAt     int64  `json:"updated_at"`     // Timestamp of last update
 }
 
 // Manager handles reading and writing session state.
@@ -52,7 +52,7 @@ func (m *Manager) Write(session *timer.Session) error {
 		EndsAt:        session.EndsAt.Unix(),
 		Paused:        session.IsPaused,
 		RemainingSecs: int(session.RemainingTime.Seconds()),
-		PID:            os.Getpid(),
+		PID:           os.Getpid(),
 		SessionCount:  session.SessionCount,
 		UpdatedAt:     time.Now().Unix(),
 	}
