@@ -1,14 +1,16 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
-// TestNewModel tests NewModel initialization.
 func TestNewModel(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -27,7 +29,6 @@ func TestNewModel(t *testing.T) {
 	}
 }
 
-// TestModelInit tests the Init command.
 func TestModelInit(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -38,7 +39,6 @@ func TestModelInit(t *testing.T) {
 	}
 }
 
-// TestViewRender tests that View renders without panic.
 func TestViewRender(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -57,7 +57,6 @@ func TestViewRender(t *testing.T) {
 	}
 }
 
-// TestViewSmallTerminal tests View with small terminal.
 func TestViewSmallTerminal(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -65,15 +64,11 @@ func TestViewSmallTerminal(t *testing.T) {
 	model.height = 10
 
 	view := model.View()
-	if view == "" {
-		t.Error("View returned empty string")
-	}
-	if !contains(view, "Terminal too small") {
-		t.Error("Expected 'Terminal too small' message")
+	if !strings.Contains(view, "Terminal too small") {
+		t.Errorf("expected 'Terminal too small', got: %q", view)
 	}
 }
 
-// TestViewTinyTerminal tests View with extremely small terminal.
 func TestViewTinyTerminal(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -81,12 +76,11 @@ func TestViewTinyTerminal(t *testing.T) {
 	model.height = 5
 
 	view := model.View()
-	if !contains(view, "Terminal too small") {
-		t.Error("Expected 'Terminal too small' message for tiny terminal")
+	if !strings.Contains(view, "Terminal too small") {
+		t.Errorf("expected 'Terminal too small', got: %q", view)
 	}
 }
 
-// TestGetDurationForPhase tests duration getter.
 func TestGetDurationForPhase(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -109,69 +103,6 @@ func TestGetDurationForPhase(t *testing.T) {
 	}
 }
 
-// TestCenterStr tests string centering.
-func TestCenterStr(t *testing.T) {
-	tests := []struct {
-		s     string
-		width int
-		want  int // expected centered string length (min of string len and width)
-	}{
-		{"hello", 10, 10}, // string centered in larger width
-		{"hello", 5, 5},   // exact fit
-		{"hello", 3, 5},   // string longer than width, returns full string
-		{"", 5, 5},        // empty string, returns spaces
-		{"x", 1, 1},       // single char
-	}
-
-	for _, tt := range tests {
-		got := centerStr(tt.s, tt.width)
-		// centerStr returns a string, check that it's at least the width or the string length
-		if len(got) < tt.width && len(tt.s) >= tt.width {
-			t.Errorf("centerStr(%q, %d) len = %d, want at least %d", tt.s, tt.width, len(got), tt.width)
-		}
-	}
-}
-
-// TestRepeatStr tests string repetition.
-func TestRepeatStr(t *testing.T) {
-	tests := []struct {
-		s    string
-		n    int
-		want string
-	}{
-		{"a", 3, "aaa"},
-		{"ab", 2, "abab"},
-		{"x", 0, ""},
-		{"x", -1, ""},
-		{"", 5, ""},
-	}
-
-	for _, tt := range tests {
-		got := repeatStr(tt.s, tt.n)
-		if got != tt.want {
-			t.Errorf("repeatStr(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
-		}
-	}
-}
-
-// TestHandleKeypress tests keypress handling.
-func TestHandleKeypress(t *testing.T) {
-	cfg := config.Default()
-	model := NewModel(cfg)
-
-	// Test that keypresses don't panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("handleKeypress panicked: %v", r)
-		}
-	}()
-
-	// Ensure model is available for keypress simulation
-	// (Actual key handling is tested via tea.KeyMsg in Update)
-	_ = model
-}
-
-// TestWindowResize tests window resize message handling.
 func TestWindowResize(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -180,8 +111,6 @@ func TestWindowResize(t *testing.T) {
 		t.Error("Initial dimensions should be 80x24")
 	}
 
-	// Width/height would be updated via Update() with WindowSizeMsg
-	// For now, just verify they're settable
 	model.width = 120
 	model.height = 40
 
@@ -190,17 +119,15 @@ func TestWindowResize(t *testing.T) {
 	}
 }
 
-// TestSessionTracking tests that model tracks session state.
 func TestSessionTracking(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
 
 	if model.session.IsRunning {
-		t.Error("Session should not be running initially (should be Idle)")
+		t.Error("Session should not be running initially")
 	}
 }
 
-// TestThemeLoading tests that theme loads correctly.
 func TestThemeLoading(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -213,23 +140,84 @@ func TestThemeLoading(t *testing.T) {
 	}
 }
 
-// TestMultipleModels tests creating multiple models.
 func TestMultipleModels(t *testing.T) {
 	cfg1 := config.Default()
 	cfg2 := config.Default()
 
-	model1 := NewModel(cfg1)
-	model2 := NewModel(cfg2)
+	m1 := NewModel(cfg1)
+	m2 := NewModel(cfg2)
 
-	if model1 == model2 {
+	if m1 == m2 {
 		t.Error("Each NewModel should create a new instance")
 	}
-	if model1.session == model2.session {
+	if m1.session == m2.session {
 		t.Error("Each model should have its own session")
 	}
 }
 
-// BenchmarkRender benchmarks the View rendering.
+func TestPhaseLabel(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+
+	// Idle state
+	label := phaseLabel(model.session)
+	if label != "Focus Timer" {
+		t.Errorf("idle label = %q, want %q", label, "Focus Timer")
+	}
+
+	// Start a work session
+	_ = model.session.Start(timer.RealClock{})
+	label = phaseLabel(model.session)
+	if label != "Work" {
+		t.Errorf("work label = %q, want %q", label, "Work")
+	}
+
+	// Skip to short break
+	model.session.Skip()
+	label = phaseLabel(model.session)
+	if label != "Short Break" {
+		t.Errorf("short break label = %q, want %q", label, "Short Break")
+	}
+}
+
+func TestBigClockRows(t *testing.T) {
+	rows := bigClockRows("00:00", lipgloss.Color("#ff0000"))
+	if len(rows) != 5 {
+		t.Errorf("bigClockRows returned %d rows, want 5", len(rows))
+	}
+	for i, row := range rows {
+		if row == "" {
+			t.Errorf("row %d is empty", i)
+		}
+	}
+}
+
+func TestProgressBar(t *testing.T) {
+	bar := progressBar(0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	if bar == "" {
+		t.Error("progressBar returned empty string")
+	}
+
+	// Test edge cases
+	_ = progressBar(0.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = progressBar(1.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = progressBar(1.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = progressBar(-0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+}
+
+func TestSessionDots(t *testing.T) {
+	dots := sessionDots(2, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	if dots == "" {
+		t.Error("sessionDots returned empty string")
+	}
+
+	// Test zero completed
+	dots = sessionDots(0, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	if dots == "" {
+		t.Error("sessionDots returned empty string for 0 completed")
+	}
+}
+
 func BenchmarkRender(b *testing.B) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -242,7 +230,6 @@ func BenchmarkRender(b *testing.B) {
 	}
 }
 
-// BenchmarkGetDurationForPhase benchmarks duration getter.
 func BenchmarkGetDurationForPhase(b *testing.B) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -251,14 +238,4 @@ func BenchmarkGetDurationForPhase(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = model.getDurationForPhase()
 	}
-}
-
-// contains checks if a string contains a substring (simple helper).
-func contains(s, substr string) bool {
-	for i := 0; i < len(s)-len(substr)+1; i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

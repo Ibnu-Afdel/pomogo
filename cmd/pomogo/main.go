@@ -12,8 +12,12 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
 )
 
-// Version is injected at build time via -ldflags "-X main.Version=..."
-var Version = "dev"
+// Build-time variables injected via -ldflags.
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -50,7 +54,11 @@ func handleDefault() {
 }
 
 func handleVersion() {
-	fmt.Printf("pomogo version %s\n", Version)
+	if Version == "dev" {
+		fmt.Printf("pomogo %s\n", Version)
+	} else {
+		fmt.Printf("pomogo %s (commit %s, built %s)\n", Version, Commit, Date)
+	}
 }
 
 func handleConfig() {
