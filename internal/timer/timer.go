@@ -123,21 +123,25 @@ func NewSession(workDuration, shortBreakDuration, longBreakDuration time.Duratio
 	}
 }
 
-// Start begins a new work session.
+// Start begins the currently queued phase. From idle, it starts a work session.
 func (s *Session) Start(clock Clock) error {
 	if s.IsRunning {
 		return fmt.Errorf("session already running")
 	}
 
-	s.State = StateWork
-	s.Phase = PhaseWork
+	if s.State == StateIdle {
+		s.Phase = PhaseWork
+		s.State = StateWork
+	} else {
+		s.State = stateForPhase(s.Phase)
+	}
 	s.IsRunning = true
 	s.IsPaused = false
 
 	now := clock.Now()
 	s.StartedAt = now
-	s.EndsAt = now.Add(s.WorkDuration)
-	s.RemainingTime = s.WorkDuration
+	s.RemainingTime = s.durationForPhase()
+	s.EndsAt = now.Add(s.RemainingTime)
 
 	return nil
 }
@@ -150,6 +154,10 @@ func (s *Session) Pause(clock Clock) error {
 
 	s.IsPaused = true
 	s.PausedAt = clock.Now()
+	s.RemainingTime = s.EndsAt.Sub(s.PausedAt)
+	if s.RemainingTime < 0 {
+		s.RemainingTime = 0
+	}
 	return nil
 }
 
@@ -188,9 +196,24 @@ func (s *Session) Tick(clock Clock) bool {
 	return false
 }
 
-// Skip skips the current session and moves to the next phase.
+// Skip abandons the current session and advances to the next phase.
+// Skipping a work session counts toward the long-break cycle, same as completing one.
 func (s *Session) Skip() SessionState {
-	return s.advancePhase()
+	if s.Phase == PhaseWork {
+		s.SessionCount++
+		s.SessionsUntilLongBreak--
+	}
+	s.IsRunning = false
+	s.IsPaused = false
+	s.RemainingTime = 0
+	s.StartedAt = time.Time{}
+	s.EndsAt = time.Time{}
+	s.PausedAt = time.Time{}
+	next := s.advancePhase()
+	if next == StateLongBreak {
+		s.SessionsUntilLongBreak = s.SessionsBeforeLongBreak
+	}
+	return next
 }
 
 // Complete marks the session as completed and moves to the next phase.
@@ -198,14 +221,15 @@ func (s *Session) Complete() SessionState {
 	if s.Phase == PhaseWork {
 		s.SessionCount++
 		s.SessionsUntilLongBreak--
-		if s.SessionsUntilLongBreak == 0 {
-			s.SessionsUntilLongBreak = s.SessionsBeforeLongBreak
-		}
 	}
 
 	s.IsRunning = false
 	s.IsPaused = false
-	return s.advancePhase()
+	next := s.advancePhase()
+	if next == StateLongBreak {
+		s.SessionsUntilLongBreak = s.SessionsBeforeLongBreak
+	}
+	return next
 }
 
 // advancePhase determines the next phase in the cycle.
@@ -234,12 +258,35 @@ func (s *Session) advancePhase() SessionState {
 // Reset resets the session to idle state.
 func (s *Session) Reset() {
 	s.State = StateIdle
+	s.Phase = PhaseWork
 	s.IsRunning = false
 	s.IsPaused = false
 	s.StartedAt = time.Time{}
 	s.EndsAt = time.Time{}
 	s.PausedAt = time.Time{}
 	s.RemainingTime = 0
+}
+
+func (s *Session) durationForPhase() time.Duration {
+	switch s.Phase {
+	case PhaseShortBreak:
+		return s.ShortBreakDuration
+	case PhaseLongBreak:
+		return s.LongBreakDuration
+	default:
+		return s.WorkDuration
+	}
+}
+
+func stateForPhase(phase SessionPhase) SessionState {
+	switch phase {
+	case PhaseShortBreak:
+		return StateShortBreak
+	case PhaseLongBreak:
+		return StateLongBreak
+	default:
+		return StateWork
+	}
 }
 
 // Handle processes an event and updates the session state.

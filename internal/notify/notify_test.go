@@ -8,7 +8,7 @@ import (
 
 // TestNewNotifier tests Notifier creation.
 func TestNewNotifier(t *testing.T) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 	if notifier == nil {
 		t.Fatal("NewNotifier returned nil")
 	}
@@ -16,7 +16,7 @@ func TestNewNotifier(t *testing.T) {
 		t.Error("Notifier should be enabled")
 	}
 
-	notifierDisabled := NewNotifier(false)
+	notifierDisabled := NewNotifier(false, false)
 	if notifierDisabled.enabled {
 		t.Error("Notifier should be disabled")
 	}
@@ -24,7 +24,7 @@ func TestNewNotifier(t *testing.T) {
 
 // TestNotifyTransitionDisabled tests that disabled notifier returns early.
 func TestNotifyTransitionDisabled(t *testing.T) {
-	notifier := NewNotifier(false)
+	notifier := NewNotifier(false, false)
 	err := notifier.NotifyTransition(timer.StateWork, timer.PhaseWork)
 	if err != nil {
 		t.Errorf("Disabled notifier should not error: %v", err)
@@ -33,7 +33,7 @@ func TestNotifyTransitionDisabled(t *testing.T) {
 
 // TestNotifyTransitionWork tests work state notification.
 func TestNotifyTransitionWork(t *testing.T) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 	title, msg, urgency := notifier.messageForTransition(timer.StateWork, timer.PhaseWork)
 
 	if title == "" {
@@ -49,7 +49,7 @@ func TestNotifyTransitionWork(t *testing.T) {
 
 // TestNotifyTransitionShortBreak tests short break notification.
 func TestNotifyTransitionShortBreak(t *testing.T) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 	title, msg, urgency := notifier.messageForTransition(timer.StateShortBreak, timer.PhaseShortBreak)
 
 	if title == "" {
@@ -65,7 +65,7 @@ func TestNotifyTransitionShortBreak(t *testing.T) {
 
 // TestNotifyTransitionLongBreak tests long break notification.
 func TestNotifyTransitionLongBreak(t *testing.T) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 	title, msg, urgency := notifier.messageForTransition(timer.StateLongBreak, timer.PhaseLongBreak)
 
 	if title == "" {
@@ -81,7 +81,7 @@ func TestNotifyTransitionLongBreak(t *testing.T) {
 
 // TestNotifyTransitionIdle tests idle state notification.
 func TestNotifyTransitionIdle(t *testing.T) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 	title, msg, urgency := notifier.messageForTransition(timer.StateIdle, timer.PhaseWork)
 
 	if title == "" {
@@ -97,7 +97,7 @@ func TestNotifyTransitionIdle(t *testing.T) {
 
 // TestNotifyError tests error notification.
 func TestNotifyError(t *testing.T) {
-	notifier := NewNotifier(false)
+	notifier := NewNotifier(false, false)
 	err := notifier.NotifyError("Test error")
 	if err != nil {
 		t.Errorf("NotifyError should not error even when disabled: %v", err)
@@ -148,7 +148,7 @@ func TestStateString(t *testing.T) {
 
 // TestNotifyCustom tests custom notification.
 func TestNotifyCustom(t *testing.T) {
-	notifier := NewNotifier(false)
+	notifier := NewNotifier(false, false)
 	err := notifier.NotifyCustom("Test", "Message", "normal")
 	if err != nil {
 		t.Errorf("NotifyCustom should not error: %v", err)
@@ -157,7 +157,7 @@ func TestNotifyCustom(t *testing.T) {
 
 // TestNotifyCustomInvalidUrgency tests custom notification with invalid urgency.
 func TestNotifyCustomInvalidUrgency(t *testing.T) {
-	notifier := NewNotifier(false)
+	notifier := NewNotifier(false, false)
 	err := notifier.NotifyCustom("Test", "Message", "invalid")
 	if err != nil {
 		t.Errorf("NotifyCustom should handle invalid urgency: %v", err)
@@ -168,7 +168,7 @@ func TestNotifyCustomInvalidUrgency(t *testing.T) {
 func TestNotifyWithMissingNotifySend(t *testing.T) {
 	// This test checks that sending a notification doesn't crash
 	// when notify-send is missing (which is the case in test environments).
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -185,7 +185,7 @@ func TestNotifyWithMissingNotifySend(t *testing.T) {
 
 // BenchmarkNotifyTransition benchmarks notification sending.
 func BenchmarkNotifyTransition(b *testing.B) {
-	notifier := NewNotifier(false) // Disabled to avoid sending actual notifications
+	notifier := NewNotifier(false, false) // Disabled to avoid sending actual notifications
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -195,7 +195,7 @@ func BenchmarkNotifyTransition(b *testing.B) {
 
 // BenchmarkMessageForTransition benchmarks message generation.
 func BenchmarkMessageForTransition(b *testing.B) {
-	notifier := NewNotifier(true)
+	notifier := NewNotifier(true, false)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

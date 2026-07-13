@@ -185,7 +185,7 @@ func TestCompleteWorkSession(t *testing.T) {
 	}
 }
 
-// TestSkip tests skipping a session.
+// TestSkip verifies that skipping stops the timer and advances the phase.
 func TestSkip(t *testing.T) {
 	clock := NewMockClock()
 	s := NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
@@ -194,10 +194,48 @@ func TestSkip(t *testing.T) {
 	newState := s.Skip()
 
 	if newState != StateShortBreak {
-		t.Errorf("Skip from work should go to short break, got %v", newState)
+		t.Errorf("skip from work: got %v, want ShortBreak", newState)
 	}
 	if s.State != StateShortBreak {
-		t.Errorf("State should be ShortBreak, got %v", s.State)
+		t.Errorf("State = %v, want ShortBreak", s.State)
+	}
+	if s.IsRunning {
+		t.Error("IsRunning should be false after skip")
+	}
+	if s.RemainingTime != 0 {
+		t.Errorf("RemainingTime = %v, want 0", s.RemainingTime)
+	}
+	if !s.EndsAt.IsZero() {
+		t.Errorf("EndsAt should be zero after skip")
+	}
+	if s.SessionCount != 1 {
+		t.Errorf("SessionCount = %d, want 1", s.SessionCount)
+	}
+	if s.SessionsUntilLongBreak != 3 {
+		t.Errorf("SessionsUntilLongBreak = %d, want 3", s.SessionsUntilLongBreak)
+	}
+}
+
+// TestSkipCountsLongBreak verifies four skipped work sessions trigger a long break.
+func TestSkipCountsLongBreak(t *testing.T) {
+	clock := NewMockClock()
+	s := NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+
+	for i := 0; i < 3; i++ {
+		s.Start(clock)
+		if st := s.Skip(); st != StateShortBreak {
+			t.Fatalf("skip %d: got %v, want ShortBreak", i+1, st)
+		}
+		s.Start(clock)
+		s.Skip() // skip the break → back to work
+	}
+
+	s.Start(clock)
+	if st := s.Skip(); st != StateLongBreak {
+		t.Errorf("4th work skip: got %v, want LongBreak", st)
+	}
+	if s.SessionsUntilLongBreak != 4 {
+		t.Errorf("SessionsUntilLongBreak after long break = %d, want 4", s.SessionsUntilLongBreak)
 	}
 }
 
@@ -318,7 +356,7 @@ func TestLongBreakCycle(t *testing.T) {
 	clock := NewMockClock()
 	s := NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 
-	// Simulate 4 work sessions + short breaks
+	// Simulate 4 completed work sessions.
 	for cycle := 0; cycle < 4; cycle++ {
 		// Start and complete a work session
 		if err := s.Start(clock); err != nil {
@@ -334,10 +372,14 @@ func TestLongBreakCycle(t *testing.T) {
 			if s.State != StateShortBreak || s.Phase != PhaseShortBreak {
 				t.Errorf("cycle %d: expected ShortBreak after work, got %v/%v", cycle, s.State, s.Phase)
 			}
+		} else if s.State != StateLongBreak || s.Phase != PhaseLongBreak {
+			t.Errorf("cycle %d: expected LongBreak after work, got %v/%v", cycle, s.State, s.Phase)
 		}
 
-		// Complete the break (or long break on last cycle)
 		if cycle < 3 {
+			if err := s.Start(clock); err != nil {
+				t.Fatalf("cycle %d: break Start error: %v", cycle, err)
+			}
 			s.Complete()
 			if s.State != StateWork {
 				t.Errorf("cycle %d: expected Work after short break, got %v", cycle, s.State)
@@ -345,16 +387,39 @@ func TestLongBreakCycle(t *testing.T) {
 		}
 	}
 
-	// After 4th work session completes, we should have short break
-	// (long break triggers after we complete the 4th short break and start 5th work)
-	if s.State != StateShortBreak {
-		t.Errorf("after 4 cycles: expected ShortBreak, got %v", s.State)
+	if s.State != StateLongBreak {
+		t.Errorf("after 4 cycles: expected LongBreak, got %v", s.State)
 	}
 
-	// Skip the short break to trigger next work
+	if err := s.Start(clock); err != nil {
+		t.Fatalf("long break Start error: %v", err)
+	}
 	s.Skip()
 	if s.State != StateWork {
-		t.Errorf("after skip: expected Work, got %v", s.State)
+		t.Errorf("after long break skip: expected Work, got %v", s.State)
+	}
+}
+
+func TestStartQueuedBreak(t *testing.T) {
+	clock := NewMockClock()
+	s := NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+
+	if err := s.Start(clock); err != nil {
+		t.Fatalf("Start work error: %v", err)
+	}
+	s.Complete()
+	if s.State != StateShortBreak {
+		t.Fatalf("expected queued short break, got %v", s.State)
+	}
+
+	if err := s.Start(clock); err != nil {
+		t.Fatalf("Start queued break error: %v", err)
+	}
+	if s.State != StateShortBreak || s.Phase != PhaseShortBreak {
+		t.Errorf("expected running short break, got %v/%v", s.State, s.Phase)
+	}
+	if s.RemainingTime != 5*time.Minute {
+		t.Errorf("remaining time = %v, want 5m", s.RemainingTime)
 	}
 }
 

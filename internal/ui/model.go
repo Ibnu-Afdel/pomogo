@@ -65,7 +65,7 @@ func NewModel(cfg *config.Config) *Model {
 		theme:          th,
 		width:          80,
 		height:         24,
-		notifier:       notify.NewNotifier(cfg.NotificationsEnabled),
+		notifier:       notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
 		stateManager:   manager,
 		restorePending: restore.CanRestore(),
 	}
@@ -164,8 +164,10 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "n":
-		m.session.Skip()
-		m.afterTransition(true)
+		if m.session.IsRunning || m.session.IsPaused {
+			m.session.Skip()
+			m.afterTransition(true)
+		}
 	case "r":
 		m.session.Reset()
 		m.removeState()
