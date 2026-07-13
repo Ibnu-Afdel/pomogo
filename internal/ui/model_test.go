@@ -116,11 +116,11 @@ func TestCenterStr(t *testing.T) {
 		width int
 		want  int // expected centered string length (min of string len and width)
 	}{
-		{"hello", 10, 10},  // string centered in larger width
-		{"hello", 5, 5},    // exact fit
-		{"hello", 3, 5},    // string longer than width, returns full string
-		{"", 5, 5},         // empty string, returns spaces
-		{"x", 1, 1},        // single char
+		{"hello", 10, 10}, // string centered in larger width
+		{"hello", 5, 5},   // exact fit
+		{"hello", 3, 5},   // string longer than width, returns full string
+		{"", 5, 5},        // empty string, returns spaces
+		{"x", 1, 1},       // single char
 	}
 
 	for _, tt := range tests {
