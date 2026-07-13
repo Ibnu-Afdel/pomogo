@@ -3,9 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/ui"
 )
 
 // Version is injected at build time via -ldflags "-X main.Version=..."
@@ -30,10 +34,19 @@ func main() {
 }
 
 func handleDefault() {
-	fmt.Println("🍅 PomoGo — Focus Companion")
-	fmt.Println("Press ? for help, q to quit")
-	fmt.Println()
-	fmt.Println("(placeholder: TUI coming in Phase 1)")
+	// Load config (use defaults if file doesn't exist)
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	// Launch TUI
+	model := ui.NewModel(cfg)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		log.Fatalf("Error: %v", err)
+	}
 }
 
 func handleVersion() {
