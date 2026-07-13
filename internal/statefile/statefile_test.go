@@ -9,8 +9,14 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
+func useTempRuntimeDir(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+}
+
 // TestNewManager tests Manager creation.
 func TestNewManager(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -25,6 +31,7 @@ func TestNewManager(t *testing.T) {
 
 // TestWrite tests writing state to file.
 func TestWrite(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -48,6 +55,7 @@ func TestWrite(t *testing.T) {
 
 // TestRead tests reading state from file.
 func TestRead(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -80,6 +88,7 @@ func TestRead(t *testing.T) {
 
 // TestReadNonexistent tests reading when file doesn't exist.
 func TestReadNonexistent(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -99,6 +108,7 @@ func TestReadNonexistent(t *testing.T) {
 
 // TestRemove tests removing state file.
 func TestRemove(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -125,6 +135,7 @@ func TestRemove(t *testing.T) {
 
 // TestStatePathFormat tests state path format.
 func TestStatePathFormat(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -226,8 +237,13 @@ func TestIsStale(t *testing.T) {
 		},
 		{
 			"any valid state",
-			&State{PID: 12345},
-			false, // Currently simple implementation - any valid state is non-stale
+			&State{PID: os.Getpid()},
+			false,
+		},
+		{
+			"missing process",
+			&State{PID: 99999999},
+			true,
 		},
 	}
 
@@ -243,6 +259,7 @@ func TestIsStale(t *testing.T) {
 
 // TestAtomicWrite tests that writes are atomic (temp file → rename).
 func TestAtomicWrite(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -266,6 +283,7 @@ func TestAtomicWrite(t *testing.T) {
 
 // TestRoundtrip tests writing and reading back state.
 func TestRoundtrip(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := NewManager()
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -300,6 +318,7 @@ func TestRoundtrip(t *testing.T) {
 
 // BenchmarkWrite benchmarks state file writes.
 func BenchmarkWrite(b *testing.B) {
+	b.Setenv("XDG_RUNTIME_DIR", b.TempDir())
 	manager, err := NewManager()
 	if err != nil {
 		b.Fatalf("NewManager failed: %v", err)
@@ -317,6 +336,7 @@ func BenchmarkWrite(b *testing.B) {
 
 // BenchmarkRead benchmarks state file reads.
 func BenchmarkRead(b *testing.B) {
+	b.Setenv("XDG_RUNTIME_DIR", b.TempDir())
 	manager, err := NewManager()
 	if err != nil {
 		b.Fatalf("NewManager failed: %v", err)

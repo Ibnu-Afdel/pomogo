@@ -8,6 +8,9 @@ dist/
 *.out
 
 .coverprofile
-PIPELINE.md
+
+# dev artifacts
+docs/
 plan.md
-docs
+PIPELINE.md
+pomogo

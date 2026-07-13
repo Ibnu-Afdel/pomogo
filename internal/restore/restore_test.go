@@ -9,8 +9,14 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
+func useTempRuntimeDir(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+}
+
 // TestCanRestore tests the CanRestore function.
 func TestCanRestore(t *testing.T) {
+	useTempRuntimeDir(t)
 	// Initially, no saved state, so CanRestore should return false
 	canRestore := CanRestore()
 	if canRestore {
@@ -20,6 +26,7 @@ func TestCanRestore(t *testing.T) {
 
 // TestRestore tests the Restore function.
 func TestRestore(t *testing.T) {
+	useTempRuntimeDir(t)
 	// Create a state file for testing
 	manager, err := statefile.NewManager()
 	if err != nil {
@@ -57,6 +64,7 @@ func TestRestore(t *testing.T) {
 
 // TestRestoreExpiredSession tests that expired sessions are not restored.
 func TestRestoreExpiredSession(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := statefile.NewManager()
 	if err != nil {
 		t.Fatalf("Failed to create state manager: %v", err)
@@ -159,6 +167,7 @@ func TestRestoreInvalidSessionType(t *testing.T) {
 
 // TestCleanupExpired tests cleanup of expired sessions.
 func TestCleanupExpired(t *testing.T) {
+	useTempRuntimeDir(t)
 	manager, err := statefile.NewManager()
 	if err != nil {
 		t.Fatalf("Failed to create state manager: %v", err)
@@ -191,6 +200,7 @@ func TestCleanupExpired(t *testing.T) {
 
 // BenchmarkCanRestore benchmarks the CanRestore check.
 func BenchmarkCanRestore(b *testing.B) {
+	b.Setenv("XDG_RUNTIME_DIR", b.TempDir())
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = CanRestore()

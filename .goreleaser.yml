@@ -47,8 +47,6 @@ archives:
         dst: README.md
       - src: PIPELINE.md
         dst: PIPELINE.md
-      - src: LICENSE
-        dst: LICENSE
     
     format_overrides:
       - goos: windows

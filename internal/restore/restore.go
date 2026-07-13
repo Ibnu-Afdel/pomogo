@@ -41,6 +41,11 @@ func CanRestore() bool {
 // Restore attempts to restore a session from the saved state file.
 // Returns the restored session and remaining time, or an error if restoration fails.
 func Restore() (*timer.Session, time.Duration, error) {
+	return RestoreWithDurations(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+}
+
+// RestoreWithDurations attempts to restore a session using the active config durations.
+func RestoreWithDurations(work, shortBreak, longBreak time.Duration, sessionsBeforeLongBreak int) (*timer.Session, time.Duration, error) {
 	manager, err := statefile.NewManager()
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create state manager: %w", err)
@@ -63,13 +68,11 @@ func Restore() (*timer.Session, time.Duration, error) {
 	}
 
 	// Create a new session with the same configuration
-	// This is a simplified restoration - in a full implementation,
-	// we would also save and restore the work/break durations
 	session := timer.NewSession(
-		25*time.Minute, // Default - should be read from config
-		5*time.Minute,
-		15*time.Minute,
-		4,
+		work,
+		shortBreak,
+		longBreak,
+		sessionsBeforeLongBreak,
 	)
 
 	// Restore session state
@@ -110,9 +113,25 @@ func restoreSessionState(session *timer.Session, state *statefile.State) error {
 	// Restore timing (we'll set EndsAt based on remaining time)
 	// Since we don't know the exact clock offset, we estimate based on remaining time
 	session.RemainingTime = time.Duration(state.RemainingSecs) * time.Second
-	session.EndsAt = time.Now().Add(session.RemainingTime)
+	now := time.Now()
+	session.EndsAt = now.Add(session.RemainingTime)
+	session.StartedAt = now.Add(-1 * (durationForPhase(session) - session.RemainingTime))
+	if session.IsPaused {
+		session.PausedAt = now
+	}
 
 	return nil
+}
+
+func durationForPhase(session *timer.Session) time.Duration {
+	switch session.Phase {
+	case timer.PhaseShortBreak:
+		return session.ShortBreakDuration
+	case timer.PhaseLongBreak:
+		return session.LongBreakDuration
+	default:
+		return session.WorkDuration
+	}
 }
 
 // CleanupExpired removes expired state files.

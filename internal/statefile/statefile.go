@@ -4,9 +4,9 @@ package statefile
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
@@ -22,6 +22,8 @@ type State struct {
 	PID           int    `json:"pid"`            // Process ID of pomogo app
 	SessionCount  int    `json:"session_count"`  // Total sessions completed
 	UpdatedAt     int64  `json:"updated_at"`     // Timestamp of last update
+	StartedAt     int64  `json:"started_at"`     // Unix timestamp when current session started
+	TotalSecs     int    `json:"total_secs"`     // Total seconds in the current phase
 }
 
 // Manager handles reading and writing session state.
@@ -46,15 +48,25 @@ func NewManager() (*Manager, error) {
 
 // Write atomically writes the session state to disk.
 func (m *Manager) Write(session *timer.Session) error {
+	remaining := session.RemainingTime
+	if session.IsRunning && !session.IsPaused {
+		remaining = time.Until(session.EndsAt)
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+
 	state := State{
 		SessionState:  sessionStateString(session.State),
 		SessionType:   sessionPhaseString(session.Phase),
 		EndsAt:        session.EndsAt.Unix(),
 		Paused:        session.IsPaused,
-		RemainingSecs: int(session.RemainingTime.Seconds()),
+		RemainingSecs: int(remaining.Seconds()),
 		PID:           os.Getpid(),
 		SessionCount:  session.SessionCount,
 		UpdatedAt:     time.Now().Unix(),
+		StartedAt:     session.StartedAt.Unix(),
+		TotalSecs:     int(totalForPhase(session).Seconds()),
 	}
 
 	// Marshal to JSON
@@ -65,7 +77,7 @@ func (m *Manager) Write(session *timer.Session) error {
 
 	// Write atomically: write to temp file, then rename
 	tempFile := m.statePath + ".tmp"
-	if err := ioutil.WriteFile(tempFile, data, 0600); err != nil {
+	if err := os.WriteFile(tempFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write temp state file: %w", err)
 	}
 
@@ -80,7 +92,7 @@ func (m *Manager) Write(session *timer.Session) error {
 
 // Read reads the session state from disk if it exists.
 func (m *Manager) Read() (*State, error) {
-	data, err := ioutil.ReadFile(m.statePath)
+	data, err := os.ReadFile(m.statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // File doesn't exist yet
@@ -161,10 +173,12 @@ func IsStale(state *State) bool {
 		return true
 	}
 
-	// For the current implementation, we simply accept any valid PID as non-stale.
-	// In Phase 1.7, we can enhance this to check /proc/[pid] on Linux or use
-	// process.Signal(os.Signal(nil)) for true verification.
-	return false
+	if state.PID <= 0 {
+		return true
+	}
+
+	err := syscall.Kill(state.PID, 0)
+	return err == syscall.ESRCH
 }
 
 // IsExpired checks if a session state has expired based on EndsAt.
@@ -173,4 +187,15 @@ func IsExpired(state *State) bool {
 		return true
 	}
 	return time.Now().Unix() > state.EndsAt
+}
+
+func totalForPhase(session *timer.Session) time.Duration {
+	switch session.Phase {
+	case timer.PhaseShortBreak:
+		return session.ShortBreakDuration
+	case timer.PhaseLongBreak:
+		return session.LongBreakDuration
+	default:
+		return session.WorkDuration
+	}
 }
