@@ -12,6 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
+	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
@@ -39,6 +41,10 @@ func main() {
 		handleStats()
 	case "history":
 		handleHistory()
+	case "status":
+		handleStatus()
+	case "completion":
+		handleCompletion()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -100,6 +106,8 @@ func handleHelp() {
 	fmt.Println("  config init        Create a default config file")
 	fmt.Println("  stats              Show focus statistics")
 	fmt.Println("  history            Show detailed session history")
+	fmt.Println("  status             Show current session status")
+	fmt.Println("  completion         Generate shell completion scripts")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
@@ -217,6 +225,143 @@ func handleHistory() {
 		fmt.Println("No work sessions recorded yet.")
 	}
 }
+
+func handleStatus() {
+	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
+	formatFlag := statusCmd.String("format", "default", "Output format: default, waybar, tmux, json")
+
+	if err := statusCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	manager, err := statefile.NewManager()
+	if err != nil {
+		out, _ := integrations.FormatStatus(nil, *formatFlag)
+		fmt.Println(out)
+		return
+	}
+
+	state, err := manager.Read()
+	if err != nil {
+		out, _ := integrations.FormatStatus(nil, *formatFlag)
+		fmt.Println(out)
+		return
+	}
+
+	out, err := integrations.FormatStatus(state, *formatFlag)
+	if err != nil {
+		out, _ = integrations.FormatStatus(nil, *formatFlag)
+	}
+	fmt.Println(out)
+}
+
+func handleCompletion() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: pomogo completion [bash|zsh|fish]")
+		return
+	}
+
+	shell := os.Args[2]
+	switch shell {
+	case "zsh":
+		fmt.Print(zshCompletionScript)
+	case "bash":
+		fmt.Print(bashCompletionScript)
+	case "fish":
+		fmt.Print(fishCompletionScript)
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported shell: %s. Supported: bash, zsh, fish\n", shell)
+		os.Exit(1)
+	}
+}
+
+const zshCompletionScript = `#compdef pomogo
+
+_pomogo() {
+    local -a subcmds
+    subcmds=(
+        'version:Show version information'
+        'config:Manage configuration'
+        'stats:Show focus statistics'
+        'history:Show detailed session history'
+        'status:Show current session status'
+        'completion:Generate shell completions'
+        'help:Show help message'
+    )
+    
+    _arguments \
+        '1: :->cmds' \
+        '*:: :->args'
+
+    case "$state" in
+        cmds)
+            _describe -t commands 'pomogo commands' subcmds
+            ;;
+        args)
+            case "$words[1]" in
+                config)
+                    _values 'config subcommands' 'init:Create a default config file'
+                    ;;
+                stats)
+                    _arguments '--week[Show weekly activity]' '--month[Show monthly summary]'
+                    ;;
+                completion)
+                    _values 'shells' 'zsh:Zsh completion' 'bash:Bash completion' 'fish:Fish completion'
+                    ;;
+                status)
+                    _arguments '--format[Output format]:format:(default waybar tmux json)'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+compdef _pomogo pomogo
+`
+
+const bashCompletionScript = `_pomogo_completion() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="version config stats history completion help status"
+
+    if [ $COMP_CWORD -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+        return 0
+    fi
+
+    case "${prev}" in
+        config)
+            COMPREPLY=( $(compgen -W "init" -- ${cur}) )
+            return 0
+            ;;
+        stats)
+            COMPREPLY=( $(compgen -W "--week --month" -- ${cur}) )
+            return 0
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- ${cur}) )
+            return 0
+            ;;
+        status)
+            COMPREPLY=( $(compgen -W "--format" -- ${cur}) )
+            return 0
+            ;;
+    esac
+}
+complete -F _pomogo_completion pomogo
+`
+
+const fishCompletionScript = `complete -c pomogo -f
+complete -c pomogo -n "not __fish_seen_subcommand_from version config stats history completion help status" -a "version config stats history completion help status"
+complete -c pomogo -n "__fish_seen_subcommand_from config" -a "init"
+complete -c pomogo -n "__fish_seen_subcommand_from stats" -l week -d "Show weekly activity"
+complete -c pomogo -n "__fish_seen_subcommand_from stats" -l month -d "Show monthly summary"
+complete -c pomogo -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
+complete -c pomogo -n "__fish_seen_subcommand_from status" -l format -d "Output format (default, waybar, tmux, json)"
+`
 
 func init() {
 	flag.Parse()
