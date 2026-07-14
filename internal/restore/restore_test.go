@@ -39,7 +39,7 @@ func TestRestore(t *testing.T) {
 	session.Start(timer.RealClock{})
 	session.SessionCount = 2
 
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		t.Fatalf("Failed to write state: %v", err)
 	}
 

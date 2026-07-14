@@ -337,3 +337,60 @@ func TestRecordSession(t *testing.T) {
 		t.Errorf("expected note 'Completed feature X', got %q", sessions3[1].Note)
 	}
 }
+
+func TestProjectInput(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "pomogo-ui-project-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", tempDir)
+	defer func() {
+		if oldXDGDataHome == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+		}
+	}()
+
+	cfg := config.Default()
+	cfg.PromptForNotes = false
+	model := NewModel(cfg)
+
+	// Simulate pressing 'p'
+	model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("p")}))
+	if model.inputMode != modeProjectInput {
+		t.Errorf("expected inputMode modeProjectInput, got %v", model.inputMode)
+	}
+
+	// Enter project name "frontend" and press Enter
+	model.textInput.SetValue("frontend")
+	model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+
+	if model.inputMode != modeNone {
+		t.Errorf("expected inputMode modeNone, got %v", model.inputMode)
+	}
+	if model.currentProjectName != "frontend" {
+		t.Errorf("expected currentProjectName 'frontend', got %q", model.currentProjectName)
+	}
+	if model.currentProjectID == nil {
+		t.Errorf("expected currentProjectID to be populated")
+	}
+
+	// Record session and check DB association
+	now := time.Now().Truncate(time.Second)
+	model.recordSession(timer.PhaseWork, now.Add(-25*time.Minute), now, true, 25*time.Minute)
+
+	sessions, err := model.dbStore.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to get sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].ProjectName != "frontend" {
+		t.Errorf("expected ProjectName 'frontend', got %q", sessions[0].ProjectName)
+	}
+}

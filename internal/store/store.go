@@ -21,6 +21,16 @@ type Session struct {
 	EndedAt      time.Time
 	Completed    bool
 	DurationSecs int
+	ProjectID    *int64    // Optional project ID
+	ProjectName  string    // Resolved project name
+}
+
+// Project represents a user category/project for focus sessions.
+type Project struct {
+	ID       int64
+	Name     string
+	Color    string
+	Archived bool
 }
 
 // Store wraps the SQL database connection.
@@ -67,15 +77,20 @@ func (s *Store) Close() error {
 
 // SaveSession inserts a new focus session record.
 func (s *Store) SaveSession(sess *Session) error {
-	query := `INSERT INTO sessions (type, task, note, started_at, ended_at, completed, duration_secs)
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sessions (type, task, note, started_at, ended_at, completed, duration_secs, project_id)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	
 	completedInt := 0
 	if sess.Completed {
 		completedInt = 1
 	}
 
-	res, err := s.db.Exec(query, sess.Type, sess.Task, sess.Note, sess.StartedAt, sess.EndedAt, completedInt, sess.DurationSecs)
+	var projectIDVal interface{}
+	if sess.ProjectID != nil {
+		projectIDVal = *sess.ProjectID
+	}
+
+	res, err := s.db.Exec(query, sess.Type, sess.Task, sess.Note, sess.StartedAt, sess.EndedAt, completedInt, sess.DurationSecs, projectIDVal)
 	if err != nil {
 		return fmt.Errorf("failed to insert session: %w", err)
 	}
@@ -90,10 +105,11 @@ func (s *Store) SaveSession(sess *Session) error {
 
 // GetSessions returns sessions in the specified date range.
 func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
-	query := `SELECT id, type, task, note, started_at, ended_at, completed, duration_secs 
-	          FROM sessions 
-	          WHERE started_at >= ? AND started_at <= ?
-	          ORDER BY started_at ASC`
+	query := `SELECT s.id, s.type, s.task, s.note, s.started_at, s.ended_at, s.completed, s.duration_secs, s.project_id, p.name 
+	          FROM sessions s
+	          LEFT JOIN projects p ON s.project_id = p.id
+	          WHERE s.started_at >= ? AND s.started_at <= ?
+	          ORDER BY s.started_at ASC`
 
 	rows, err := s.db.Query(query, start, end)
 	if err != nil {
@@ -105,11 +121,20 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 	for rows.Next() {
 		var sess Session
 		var completedInt int
-		err := rows.Scan(&sess.ID, &sess.Type, &sess.Task, &sess.Note, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs)
+		var projectIDNull sql.NullInt64
+		var projectNameNull sql.NullString
+		err := rows.Scan(&sess.ID, &sess.Type, &sess.Task, &sess.Note, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs, &projectIDNull, &projectNameNull)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
 		sess.Completed = completedInt == 1
+		if projectIDNull.Valid {
+			id := projectIDNull.Int64
+			sess.ProjectID = &id
+		}
+		if projectNameNull.Valid {
+			sess.ProjectName = projectNameNull.String
+		}
 		sessions = append(sessions, &sess)
 	}
 
@@ -118,6 +143,70 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 	}
 
 	return sessions, nil
+}
+
+// CreateProject inserts a new project record.
+func (s *Store) CreateProject(p *Project) error {
+	query := `INSERT INTO projects (name, color, archived) VALUES (?, ?, ?)`
+	archivedInt := 0
+	if p.Archived {
+		archivedInt = 1
+	}
+
+	res, err := s.db.Exec(query, p.Name, p.Color, archivedInt)
+	if err != nil {
+		return fmt.Errorf("failed to insert project: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err == nil {
+		p.ID = id
+	}
+
+	return nil
+}
+
+// GetProjectByName retrieves a project by its name.
+func (s *Store) GetProjectByName(name string) (*Project, error) {
+	query := `SELECT id, name, color, archived FROM projects WHERE name = ?`
+	var p Project
+	var archivedInt int
+	err := s.db.QueryRow(query, name).Scan(&p.ID, &p.Name, &p.Color, &archivedInt)
+	if err != nil {
+		return nil, err
+	}
+	p.Archived = archivedInt == 1
+	return &p, nil
+}
+
+// GetProjects returns all projects.
+func (s *Store) GetProjects() ([]*Project, error) {
+	query := `SELECT id, name, color, archived FROM projects ORDER BY name ASC`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query projects: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []*Project
+	for rows.Next() {
+		var p Project
+		var archivedInt int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Color, &archivedInt); err != nil {
+			return nil, err
+		}
+		p.Archived = archivedInt == 1
+		projects = append(projects, &p)
+	}
+
+	return projects, nil
+}
+
+// ArchiveProject marks a project as archived.
+func (s *Store) ArchiveProject(name string) error {
+	query := `UPDATE projects SET archived = 1 WHERE name = ?`
+	_, err := s.db.Exec(query, name)
+	return err
 }
 
 func (s *Store) runMigrations() error {
@@ -141,6 +230,13 @@ func (s *Store) runMigrations() error {
 			completed INTEGER NOT NULL,
 			duration_secs INTEGER NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS projects (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			color TEXT,
+			archived INTEGER NOT NULL DEFAULT 0
+		);`,
+		`ALTER TABLE sessions ADD COLUMN project_id INTEGER REFERENCES projects(id);`,
 	}
 
 	for i, query := range migrations {

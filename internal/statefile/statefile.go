@@ -25,6 +25,8 @@ type State struct {
 	StartedAt     int64  `json:"started_at"`     // Unix timestamp when current session started
 	TotalSecs     int    `json:"total_secs"`     // Total seconds in the current phase
 	Task          string `json:"task,omitempty"` // Active task description
+	ProjectID     *int64 `json:"project_id,omitempty"` // Active project ID
+	ProjectName   string `json:"project_name,omitempty"` // Active project name
 }
 
 // Manager handles reading and writing session state.
@@ -48,11 +50,7 @@ func NewManager() (*Manager, error) {
 }
 
 // Write atomically writes the session state to disk.
-func (m *Manager) Write(session *timer.Session, task ...string) error {
-	taskStr := ""
-	if len(task) > 0 {
-		taskStr = task[0]
-	}
+func (m *Manager) Write(session *timer.Session, task string, projectID *int64, projectName string) error {
 	remaining := session.RemainingTime
 	if session.IsRunning && !session.IsPaused {
 		remaining = time.Until(session.EndsAt)
@@ -72,7 +70,9 @@ func (m *Manager) Write(session *timer.Session, task ...string) error {
 		UpdatedAt:     time.Now().Unix(),
 		StartedAt:     session.StartedAt.Unix(),
 		TotalSecs:     int(totalForPhase(session).Seconds()),
-		Task:          taskStr,
+		Task:          task,
+		ProjectID:     projectID,
+		ProjectName:   projectName,
 	}
 
 	// Marshal to JSON

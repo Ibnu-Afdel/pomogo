@@ -41,7 +41,7 @@ func TestWrite(t *testing.T) {
 	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	session.Start(timer.RealClock{})
 
-	err = manager.Write(session)
+	err = manager.Write(session, "", nil, "")
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestRead(t *testing.T) {
 	// Write initial state
 	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	session.Start(timer.RealClock{})
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -117,7 +117,7 @@ func TestRemove(t *testing.T) {
 	// Write state
 	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	session.Start(timer.RealClock{})
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -270,7 +270,7 @@ func TestAtomicWrite(t *testing.T) {
 	session.Start(timer.RealClock{})
 
 	// Write should not leave temp files
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestRoundtrip(t *testing.T) {
 	session.SessionCount = 3
 
 	// Write
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -330,7 +330,7 @@ func BenchmarkWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = manager.Write(session)
+		_ = manager.Write(session, "", nil, "")
 	}
 }
 
@@ -345,7 +345,7 @@ func BenchmarkRead(b *testing.B) {
 
 	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	session.Start(timer.RealClock{})
-	if err := manager.Write(session); err != nil {
+	if err := manager.Write(session, "", nil, ""); err != nil {
 		b.Fatalf("Write failed: %v", err)
 	}
 

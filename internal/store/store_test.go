@@ -97,3 +97,91 @@ func TestStore(t *testing.T) {
 		t.Errorf("expected 0 sessions in out-of-range query, got %d", len(outSessions))
 	}
 }
+
+func TestProjects(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "pomogo-projects-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer st.Close()
+
+	// 1. Create a project
+	p := &Project{
+		Name:  "testing-proj",
+		Color: "red",
+	}
+	if err := st.CreateProject(p); err != nil {
+		t.Fatalf("failed to create project: %v", err)
+	}
+	if p.ID == 0 {
+		t.Errorf("expected populated project ID, got 0")
+	}
+
+	// 2. Fetch project by name
+	fetched, err := st.GetProjectByName("testing-proj")
+	if err != nil {
+		t.Fatalf("failed to fetch project: %v", err)
+	}
+	if fetched.Name != p.Name || fetched.Color != p.Color {
+		t.Errorf("fetched project mismatch: %+v", fetched)
+	}
+
+	// 3. Save a session linked to the project
+	now := time.Now().Truncate(time.Second)
+	sess := &Session{
+		Type:         "work",
+		Task:         "Task with project",
+		StartedAt:    now.Add(-25 * time.Minute),
+		EndedAt:      now,
+		Completed:    true,
+		DurationSecs: 1500,
+		ProjectID:    &p.ID,
+	}
+	if err := st.SaveSession(sess); err != nil {
+		t.Fatalf("failed to save session: %v", err)
+	}
+
+	// 4. Retrieve session and check project relations
+	sessions, err := st.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to get sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	got := sessions[0]
+	if got.ProjectID == nil || *got.ProjectID != p.ID {
+		t.Errorf("expected project ID %d, got %v", p.ID, got.ProjectID)
+	}
+	if got.ProjectName != p.Name {
+		t.Errorf("expected project name %q, got %q", p.Name, got.ProjectName)
+	}
+
+	// 5. Get all projects
+	list, err := st.GetProjects()
+	if err != nil {
+		t.Fatalf("failed to get projects: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 project in list, got %d", len(list))
+	}
+
+	// 6. Archive project
+	if err := st.ArchiveProject("testing-proj"); err != nil {
+		t.Fatalf("failed to archive project: %v", err)
+	}
+	fetchedArchived, err := st.GetProjectByName("testing-proj")
+	if err != nil {
+		t.Fatalf("failed to get project: %v", err)
+	}
+	if !fetchedArchived.Archived {
+		t.Errorf("expected project to be archived, but it was not")
+	}
+}

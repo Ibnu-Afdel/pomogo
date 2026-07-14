@@ -45,6 +45,8 @@ func main() {
 		handleStatus()
 	case "completion":
 		handleCompletion()
+	case "projects":
+		handleProjects()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -108,6 +110,7 @@ func handleHelp() {
 	fmt.Println("  history            Show detailed session history")
 	fmt.Println("  status             Show current session status")
 	fmt.Println("  completion         Generate shell completion scripts")
+	fmt.Println("  projects           Manage focus projects")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
@@ -365,4 +368,96 @@ complete -c pomogo -n "__fish_seen_subcommand_from status" -l format -d "Output 
 
 func init() {
 	flag.Parse()
+}
+
+func handleProjects() {
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to open store: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	if len(os.Args) < 3 {
+		listProjects(st)
+		return
+	}
+
+	switch os.Args[2] {
+	case "list":
+		listProjects(st)
+	case "add":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: pomogo projects add <name> [color]")
+			os.Exit(1)
+		}
+		name := os.Args[3]
+		color := ""
+		if len(os.Args) >= 5 {
+			color = os.Args[4]
+		}
+		p := &store.Project{Name: name, Color: color}
+		if err := st.CreateProject(p); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Project '%s' added successfully.\n", name)
+	case "archive":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: pomogo projects archive <name>")
+			os.Exit(1)
+		}
+		name := os.Args[3]
+		if err := st.ArchiveProject(name); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Project '%s' archived successfully.\n", name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown projects subcommand: %s\n", os.Args[2])
+		os.Exit(1)
+	}
+}
+
+func listProjects(st *store.Store) {
+	projects, err := st.GetProjects()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to load projects: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(projects) == 0 {
+		fmt.Println("No projects found.")
+		return
+	}
+
+	var active []string
+	var archived []string
+	for _, p := range projects {
+		colorSuffix := ""
+		if p.Color != "" {
+			colorSuffix = fmt.Sprintf(" (%s)", p.Color)
+		}
+		if p.Archived {
+			archived = append(archived, p.Name+colorSuffix)
+		} else {
+			active = append(active, p.Name+colorSuffix)
+		}
+	}
+
+	fmt.Println("Active Projects:")
+	if len(active) == 0 {
+		fmt.Println("  (none)")
+	} else {
+		for _, a := range active {
+			fmt.Printf("  - %s\n", a)
+		}
+	}
+
+	if len(archived) > 0 {
+		fmt.Println("\nArchived Projects:")
+		for _, a := range archived {
+			fmt.Printf("  - %s (archived)\n", a)
+		}
+	}
 }

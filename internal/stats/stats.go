@@ -25,10 +25,15 @@ type Stats struct {
 	WeekDays       [7]DayStats
 }
 
-// Calculate computes focus statistics from a list of sessions.
-func Calculate(sessions []*store.Session, now time.Time) *Stats {
+// Calculate computes focus statistics from a list of sessions, optionally filtered by project name.
+func Calculate(sessions []*store.Session, now time.Time, projectNameFilter ...string) *Stats {
 	stats := &Stats{}
 	
+	filter := ""
+	if len(projectNameFilter) > 0 {
+		filter = projectNameFilter[0]
+	}
+
 	// Initialize last 7 days of WeekDays dates first
 	for i := 0; i < 7; i++ {
 		d := now.AddDate(0, 0, -6+i)
@@ -51,6 +56,9 @@ func Calculate(sessions []*store.Session, now time.Time) *Stats {
 
 	for _, s := range sessions {
 		if s.Type != "work" {
+			continue
+		}
+		if filter != "" && s.ProjectName != filter {
 			continue
 		}
 		totalWorkSessions++

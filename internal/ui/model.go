@@ -46,6 +46,7 @@ const (
 	modeNone inputModeType = iota
 	modeTaskInput
 	modeNoteInput
+	modeProjectInput
 )
 
 // Model is the main Bubble Tea model for the PomoGo TUI.
@@ -65,10 +66,12 @@ type Model struct {
 
 	textInput      textinput.Model
 	inputMode      inputModeType
-	currentTask    string
-	pendingSession *store.Session
-	showStats      bool
-	lastTickTime   time.Time
+	currentTask        string
+	pendingSession     *store.Session
+	showStats          bool
+	lastTickTime       time.Time
+	currentProjectID   *int64
+	currentProjectName string
 }
 
 // NewModel creates a new TUI model.
@@ -194,6 +197,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.statusMessage = fmt.Sprintf("database error: %v", err)
 					}
 					m.pendingSession = nil
+				} else if m.inputMode == modeProjectInput {
+					if val == "" {
+						m.currentProjectID = nil
+						m.currentProjectName = ""
+					} else {
+						if m.dbStore != nil {
+							p, err := m.dbStore.GetProjectByName(val)
+							if err != nil {
+								p = &store.Project{Name: val}
+								if err := m.dbStore.CreateProject(p); err == nil {
+									m.currentProjectID = &p.ID
+									m.currentProjectName = p.Name
+								} else {
+									m.statusMessage = fmt.Sprintf("database error: %v", err)
+								}
+							} else {
+								m.currentProjectID = &p.ID
+								m.currentProjectName = p.Name
+							}
+						} else {
+							m.currentProjectName = val
+						}
+					}
 				}
 				m.inputMode = modeNone
 				m.textInput.Blur()
@@ -324,6 +350,13 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.Placeholder = "Enter current task..."
 			m.textInput.Focus()
 		}
+	case "p":
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeProjectInput
+			m.textInput.SetValue(m.currentProjectName)
+			m.textInput.Placeholder = "Enter project name..."
+			m.textInput.Focus()
+		}
 	case "tab":
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.showStats = !m.showStats
@@ -365,6 +398,8 @@ func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.stateManager != nil {
 			if st, err := m.stateManager.Read(); err == nil && st != nil {
 				m.currentTask = st.Task
+				m.currentProjectID = st.ProjectID
+				m.currentProjectName = st.ProjectName
 			}
 		}
 		m.session = session
@@ -442,8 +477,13 @@ func (m *Model) renderTimerScreen() string {
 
 	// Hint line
 	hints := lipgloss.NewStyle().Foreground(muted).Render(
-		"s start  ·  space pause  ·  n skip  ·  t task  ·  r reset  ·  ? help  ·  q quit",
+		"s start  ·  space pause  ·  n skip  ·  t task  ·  p project  ·  r reset  ·  ? help  ·  q quit",
 	)
+
+	projectLine := ""
+	if m.currentProjectName != "" {
+		projectLine = lipgloss.NewStyle().Foreground(muted).Bold(true).Render("Project: " + m.currentProjectName)
+	}
 
 	taskLine := ""
 	if m.currentTask != "" {
@@ -458,6 +498,9 @@ func (m *Model) renderTimerScreen() string {
 	lines = append(lines, "")
 	lines = append(lines, center(label))
 	lines = append(lines, center(dots))
+	if projectLine != "" {
+		lines = append(lines, center(projectLine))
+	}
 	if taskLine != "" {
 		lines = append(lines, center(taskLine))
 	}
@@ -603,6 +646,7 @@ func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.
 	sess := &store.Session{
 		Type:         "work",
 		Task:         m.currentTask,
+		ProjectID:    m.currentProjectID,
 		StartedAt:    startedAt,
 		EndedAt:      endedAt,
 		Completed:    completed,
@@ -625,15 +669,15 @@ func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.
 func (m *Model) getStats() *stats.Stats {
 	now := time.Now()
 	if m.dbStore == nil {
-		return stats.Calculate(nil, now)
+		return stats.Calculate(nil, now, m.currentProjectName)
 	}
 	// Query sessions for the last 365 days
 	start := now.AddDate(-1, 0, 0)
 	sessions, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour))
 	if err != nil {
-		return stats.Calculate(nil, now)
+		return stats.Calculate(nil, now, m.currentProjectName)
 	}
-	return stats.Calculate(sessions, now)
+	return stats.Calculate(sessions, now, m.currentProjectName)
 }
 
 func weekBarGraph(weekDays [7]stats.DayStats, color, muted lipgloss.Color) string {
@@ -825,6 +869,9 @@ func (m *Model) renderInputScreen() string {
 	if m.inputMode == modeNoteInput {
 		color = lipgloss.Color(m.theme.Work.String())
 		title = "Session Note"
+	} else if m.inputMode == modeProjectInput {
+		color = lipgloss.Color(m.theme.Accent.String())
+		title = "Set Project Name"
 	}
 
 	rows := []string{
@@ -850,7 +897,7 @@ func (m *Model) writeState() {
 	if m.stateManager == nil {
 		return
 	}
-	if err := m.stateManager.Write(m.session, m.currentTask); err != nil {
+	if err := m.stateManager.Write(m.session, m.currentTask, m.currentProjectID, m.currentProjectName); err != nil {
 		m.statusMessage = fmt.Sprintf("state error: %v", err)
 	}
 }
