@@ -2,7 +2,9 @@
 package ui
 
 import (
+	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -203,6 +205,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case clearStatusMsg:
+		m.statusMessage = ""
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKeypress(msg)
 	case tea.QuitMsg:
@@ -300,6 +305,14 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.showStats = !m.showStats
+		}
+	case "y":
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			s := m.getStats()
+			summary := fmt.Sprintf("PomoGo Stats - Today: %d sessions (%d mins) | Streak: %d days | Month: %d sessions",
+				s.TodayCount, s.TodayMinutes, s.CurrentStreak, s.MonthCount)
+			m.statusMessage = "Copied stats to clipboard!"
+			return m, tea.Batch(copyOSC52(summary), m.clearStatusAfter2s())
 		}
 	case "r":
 		m.session.Reset()
@@ -711,8 +724,13 @@ func (m *Model) renderStatsScreen() string {
 		}
 	}
 
-	// Hints
-	hints := lipgloss.NewStyle().Foreground(muted).Render("Tab timer  ·  ? help  ·  q quit")
+	// Hints/Status
+	var hints string
+	if m.statusMessage != "" {
+		hints = lipgloss.NewStyle().Foreground(accent).Render(m.statusMessage)
+	} else {
+		hints = lipgloss.NewStyle().Foreground(muted).Render("Tab timer  ·  y yank stats  ·  ? help  ·  q quit")
+	}
 
 	var lines []string
 	lines = append(lines, "")
@@ -930,6 +948,26 @@ func (m *Model) updateTerminalTitle() tea.Cmd {
 			}
 		}
 		fmt.Printf("\033]2;%s\007", title)
+		return nil
+	}
+}
+
+type clearStatusMsg struct{}
+
+func (m *Model) clearStatusAfter2s() tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
+}
+
+func copyOSC52(text string) tea.Cmd {
+	return func() tea.Msg {
+		b64 := base64.StdEncoding.EncodeToString([]byte(text))
+		seq := fmt.Sprintf("\033]52;c;%s\007", b64)
+		if os.Getenv("TMUX") != "" {
+			seq = fmt.Sprintf("\033Ptmux;\033%s\033\\", seq)
+		}
+		fmt.Print(seq)
 		return nil
 	}
 }
