@@ -46,6 +46,7 @@ type Profile struct {
 	SessionsBeforeLongBreak *int    `toml:"sessions_before_long_break"`
 	Theme                   *string `toml:"theme"`
 	Project                 *string `toml:"project"`
+	SoundEvent              *string `toml:"sound_event"`
 }
 
 // Default returns a Config with sensible defaults (no file required).
@@ -216,18 +217,19 @@ terminal_title_enabled = true
 }
 
 // ResolveProfile resolves config settings by applying profile overrides.
-// It returns a copy of the Config with overridden settings, and optionally a default project name.
-func (c *Config) ResolveProfile(name string) (*Config, string) {
+// It returns a copy of the Config with overridden settings, a default project name, and a custom sound event.
+func (c *Config) ResolveProfile(name string) (*Config, string, string) {
 	resolved := *c
 	project := ""
+	soundEvent := ""
 
 	if c.Profiles == nil {
-		return &resolved, project
+		return &resolved, project, soundEvent
 	}
 
 	p, exists := c.Profiles[name]
 	if !exists {
-		return &resolved, project
+		return &resolved, project, soundEvent
 	}
 
 	if p.WorkDuration != nil {
@@ -248,6 +250,9 @@ func (c *Config) ResolveProfile(name string) (*Config, string) {
 	if p.Project != nil {
 		project = *p.Project
 	}
+	if p.SoundEvent != nil {
+		soundEvent = *p.SoundEvent
+	}
 
-	return &resolved, project
+	return &resolved, project, soundEvent
 }

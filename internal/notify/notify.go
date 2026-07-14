@@ -15,9 +15,10 @@ const soundEventBell = "bell"
 
 // Notifier sends system notifications and plays sounds for Pomodoro events.
 type Notifier struct {
-	enabled      bool
-	soundEnabled bool
-	dbusNotifier *DBusNotifier
+	enabled          bool
+	soundEnabled     bool
+	dbusNotifier     *DBusNotifier
+	customSoundEvent string
 }
 
 // NewNotifier creates a Notifier.
@@ -33,6 +34,11 @@ func NewNotifier(enabled, soundEnabled bool) *Notifier {
 // DBusNotifier returns the underlying DBusNotifier instance, if any.
 func (n *Notifier) DBusNotifier() *DBusNotifier {
 	return n.dbusNotifier
+}
+
+// SetCustomSoundEvent sets a custom transition sound event name.
+func (n *Notifier) SetCustomSoundEvent(event string) {
+	n.customSoundEvent = event
 }
 
 // NotifyTransition sends a notification and plays a sound on a session transition.
@@ -98,13 +104,17 @@ func (n *Notifier) playSound(state timer.SessionState) {
 		return
 	}
 	var eventID string
-	switch state {
-	case timer.StateShortBreak, timer.StateLongBreak:
-		eventID = soundEventComplete // work done → entering break
-	case timer.StateWork:
-		eventID = soundEventBell // break done → back to work
-	default:
-		return
+	if n.customSoundEvent != "" {
+		eventID = n.customSoundEvent
+	} else {
+		switch state {
+		case timer.StateShortBreak, timer.StateLongBreak:
+			eventID = soundEventComplete // work done → entering break
+		case timer.StateWork:
+			eventID = soundEventBell // break done → back to work
+		default:
+			return
+		}
 	}
 
 	path, err := exec.LookPath("canberra-gtk-play")

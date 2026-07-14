@@ -479,10 +479,11 @@ func handleStart() {
 	}
 
 	project := ""
+	soundEvent := ""
 	// 1. Check if profile matches
 	if cfg.Profiles != nil {
 		if _, exists := cfg.Profiles[target]; exists {
-			cfg, project = cfg.ResolveProfile(target)
+			cfg, project, soundEvent = cfg.ResolveProfile(target)
 		}
 	}
 
@@ -505,6 +506,9 @@ func handleStart() {
 	// Launch TUI with resolved config and project
 	model := ui.NewModel(cfg)
 	model.SetProjectByName(project)
+	if soundEvent != "" {
+		model.SetCustomSoundEvent(soundEvent)
+	}
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

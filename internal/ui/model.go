@@ -1076,3 +1076,10 @@ func (m *Model) SetProjectByName(name string) {
 		m.currentProjectName = name
 	}
 }
+
+// SetCustomSoundEvent overrides transition sounds for the session.
+func (m *Model) SetCustomSoundEvent(event string) {
+	if m.notifier != nil {
+		m.notifier.SetCustomSoundEvent(event)
+	}
+}

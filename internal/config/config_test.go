@@ -353,17 +353,19 @@ func TestResolveProfile(t *testing.T) {
 	themeStr := "catppuccin"
 	projStr := "backend"
 
+	soundEventStr := "complete"
 	cfg.Profiles = map[string]Profile{
 		"coding": {
 			WorkDuration:       &fifty,
 			ShortBreakDuration: &ten,
 			Theme:              &themeStr,
 			Project:            &projStr,
+			SoundEvent:         &soundEventStr,
 		},
 	}
 
 	// 1. Resolve existing profile
-	resolved, project := cfg.ResolveProfile("coding")
+	resolved, project, soundEvent := cfg.ResolveProfile("coding")
 	if resolved.WorkDuration != 50 {
 		t.Errorf("expected WorkDuration 50, got %d", resolved.WorkDuration)
 	}
@@ -376,6 +378,9 @@ func TestResolveProfile(t *testing.T) {
 	if project != "backend" {
 		t.Errorf("expected project 'backend', got %q", project)
 	}
+	if soundEvent != "complete" {
+		t.Errorf("expected soundEvent 'complete', got %q", soundEvent)
+	}
 
 	// 2. Fallbacks should stay intact
 	if resolved.LongBreakDuration != cfg.LongBreakDuration {
@@ -383,11 +388,14 @@ func TestResolveProfile(t *testing.T) {
 	}
 
 	// 3. Resolve non-existent profile
-	resolvedNon, projectNon := cfg.ResolveProfile("non-existent")
+	resolvedNon, projectNon, soundEventNon := cfg.ResolveProfile("non-existent")
 	if resolvedNon.WorkDuration != cfg.WorkDuration {
 		t.Errorf("expected WorkDuration to be unchanged")
 	}
 	if projectNon != "" {
 		t.Errorf("expected empty project name")
+	}
+	if soundEventNon != "" {
+		t.Errorf("expected empty sound event")
 	}
 }
