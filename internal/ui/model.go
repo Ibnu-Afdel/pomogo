@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -75,6 +76,7 @@ type Model struct {
 	suggestions        []string
 	filteredSuggestions []string
 	suggestionIndex    int
+	lastHookState      timer.SessionState
 }
 
 // NewModel creates a new TUI model.
@@ -233,8 +235,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && m.suggestionIndex >= 0 && m.suggestionIndex < len(m.filteredSuggestions) {
 					item := m.filteredSuggestions[m.suggestionIndex]
 					if m.inputMode == modeTaskInput {
-						_ = m.dbStore.DeleteTaskName(item)
-						if list, err := m.dbStore.GetUniqueTasks(); err == nil {
+						_ = m.dbStore.DeleteTaskName(item, m.currentProjectID)
+						if list, err := m.dbStore.GetUniqueTasks(m.currentProjectID); err == nil {
 							m.suggestions = list
 						}
 					} else {
@@ -426,7 +428,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.Focus()
 			m.suggestions = nil
 			if m.dbStore != nil {
-				if list, err := m.dbStore.GetUniqueTasks(); err == nil {
+				if list, err := m.dbStore.GetUniqueTasks(m.currentProjectID); err == nil {
 					m.suggestions = list
 				}
 			}
@@ -734,6 +736,7 @@ func (m *Model) afterTransition(sendNotification bool) {
 	if sendNotification && m.notifier != nil {
 		_ = m.notifier.NotifyTransition(m.session.State, m.session.Phase)
 	}
+	m.triggerHooks()
 }
 
 func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.Time, completed bool, duration time.Duration) {
@@ -1224,5 +1227,62 @@ func (m *Model) filterSuggestions() {
 	}
 	if m.suggestionIndex < -1 {
 		m.suggestionIndex = -1
+	}
+}
+
+func (m *Model) triggerHooks() {
+	if m.lastHookState == m.session.State {
+		return
+	}
+
+	// 1. End events
+	if m.lastHookState == timer.StateWork {
+		m.runHook(m.cfg.OnWorkEnd)
+	} else if m.lastHookState == timer.StateShortBreak || m.lastHookState == timer.StateLongBreak {
+		m.runHook(m.cfg.OnBreakEnd)
+	}
+
+	// 2. Start events
+	if m.session.State == timer.StateWork {
+		m.runHook(m.cfg.OnWorkStart)
+	} else if m.session.State == timer.StateShortBreak || m.session.State == timer.StateLongBreak {
+		m.runHook(m.cfg.OnBreakStart)
+	}
+
+	m.lastHookState = m.session.State
+}
+
+func (m *Model) runHook(cmdStr string) {
+	if cmdStr == "" {
+		return
+	}
+
+	go func() {
+		cmd := exec.Command("sh", "-c", cmdStr)
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_STATE=%s", m.sessionStateString(m.session.State)))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_PREV_STATE=%s", m.sessionStateString(m.lastHookState)))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_TASK=%s", m.currentTask))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_PROJECT=%s", m.currentProjectName))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_DURATION=%d", int(m.getDurationForPhase().Seconds())))
+
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		_ = cmd.Run()
+	}()
+}
+
+func (m *Model) sessionStateString(state timer.SessionState) string {
+	switch state {
+	case timer.StateIdle:
+		return "idle"
+	case timer.StateWork:
+		return "work"
+	case timer.StateShortBreak:
+		return "short_break"
+	case timer.StateLongBreak:
+		return "long_break"
+	default:
+		return "unknown"
 	}
 }

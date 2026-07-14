@@ -121,13 +121,21 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 	for rows.Next() {
 		var sess Session
 		var completedInt int
+		var taskNull sql.NullString
+		var noteNull sql.NullString
 		var projectIDNull sql.NullInt64
 		var projectNameNull sql.NullString
-		err := rows.Scan(&sess.ID, &sess.Type, &sess.Task, &sess.Note, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs, &projectIDNull, &projectNameNull)
+		err := rows.Scan(&sess.ID, &sess.Type, &taskNull, &noteNull, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs, &projectIDNull, &projectNameNull)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
 		sess.Completed = completedInt == 1
+		if taskNull.Valid {
+			sess.Task = taskNull.String
+		}
+		if noteNull.Valid {
+			sess.Note = noteNull.String
+		}
 		if projectIDNull.Valid {
 			id := projectIDNull.Int64
 			sess.ProjectID = &id
@@ -216,10 +224,17 @@ func (s *Store) UnarchiveProject(name string) error {
 	return err
 }
 
-// GetUniqueTasks returns distinct task names, ordered by recency.
-func (s *Store) GetUniqueTasks() ([]string, error) {
-	query := `SELECT DISTINCT task FROM sessions WHERE task IS NOT NULL AND task != '' ORDER BY started_at DESC LIMIT 50`
-	rows, err := s.db.Query(query)
+// GetUniqueTasks returns distinct task names, scoped to a project when projectID is non-nil.
+func (s *Store) GetUniqueTasks(projectID *int64) ([]string, error) {
+	var query string
+	var args []interface{}
+	if projectID != nil {
+		query = `SELECT DISTINCT task FROM sessions WHERE task IS NOT NULL AND task != '' AND project_id = ? ORDER BY started_at DESC LIMIT 50`
+		args = append(args, *projectID)
+	} else {
+		query = `SELECT DISTINCT task FROM sessions WHERE task IS NOT NULL AND task != '' AND project_id IS NULL ORDER BY started_at DESC LIMIT 50`
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
@@ -236,9 +251,14 @@ func (s *Store) GetUniqueTasks() ([]string, error) {
 	return tasks, nil
 }
 
-// DeleteTaskName clears the task description from all sessions matching the task name.
-func (s *Store) DeleteTaskName(task string) error {
-	query := `UPDATE sessions SET task = NULL WHERE task = ?`
+// DeleteTaskName clears the task description from sessions matching the task name, scoped to a project.
+func (s *Store) DeleteTaskName(task string, projectID *int64) error {
+	if projectID != nil {
+		query := `UPDATE sessions SET task = NULL WHERE task = ? AND project_id = ?`
+		_, err := s.db.Exec(query, task, *projectID)
+		return err
+	}
+	query := `UPDATE sessions SET task = NULL WHERE task = ? AND project_id IS NULL`
 	_, err := s.db.Exec(query, task)
 	return err
 }

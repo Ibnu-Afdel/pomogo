@@ -49,6 +49,12 @@ func main() {
 		handleProjects()
 	case "start":
 		handleStart()
+	case "doctor":
+		handleDoctor()
+	case "export":
+		handleExport()
+	case "report":
+		handleReport()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -114,6 +120,9 @@ func handleHelp() {
 	fmt.Println("  completion         Generate shell completion scripts")
 	fmt.Println("  projects           Manage focus projects")
 	fmt.Println("  start [profile|prj] Start timer with a specific profile or project")
+	fmt.Println("  doctor             Check system dependencies and configuration health")
+	fmt.Println("  export             Export focus session history to JSON or CSV format")
+	fmt.Println("  report             Generate a weekly focus report in Markdown")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
@@ -514,4 +523,116 @@ func handleStart() {
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+}
+
+func handleDoctor() {
+	fmt.Println("Checking PomoGo system health...")
+	fmt.Println()
+	diags := integrations.RunDoctor()
+	allPassed := true
+	for _, d := range diags {
+		status := "✔"
+		if !d.Passed {
+			status = "✘"
+			allPassed = false
+		}
+		fmt.Printf("[%s] %-40s : %s\n", status, d.Name, d.Message)
+	}
+	fmt.Println()
+	if allPassed {
+		fmt.Println("All systems normal! PomoGo is fully operational.")
+	} else {
+		fmt.Println("Some warnings/errors were detected. Please check the reports above.")
+	}
+}
+
+func handleExport() {
+	exportCmd := flag.NewFlagSet("export", flag.ExitOnError)
+	format := exportCmd.String("format", "json", "Output format: json or csv")
+	startStr := exportCmd.String("start", "", "Start date (YYYY-MM-DD)")
+	endStr := exportCmd.String("end", "", "End date (YYYY-MM-DD)")
+
+	if err := exportCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Defaults: export last 365 days
+	start := time.Now().AddDate(-1, 0, 0)
+	end := time.Now().Add(24 * time.Hour)
+
+	if *startStr != "" {
+		if t, err := time.Parse("2006-01-02", *startStr); err == nil {
+			start = t
+		} else {
+			fmt.Println("Invalid start date format. Use YYYY-MM-DD.")
+			os.Exit(1)
+		}
+	}
+	if *endStr != "" {
+		if t, err := time.Parse("2006-01-02", *endStr); err == nil {
+			end = t
+		} else {
+			fmt.Println("Invalid end date format. Use YYYY-MM-DD.")
+			os.Exit(1)
+		}
+	}
+
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		log.Fatalf("Error: failed to open store: %v", err)
+	}
+	defer st.Close()
+
+	output, err := st.ExportSessions(*format, start, end)
+	if err != nil {
+		log.Fatalf("Error: export failed: %v", err)
+	}
+
+	fmt.Print(output)
+}
+
+func handleReport() {
+	reportCmd := flag.NewFlagSet("report", flag.ExitOnError)
+	startStr := reportCmd.String("start", "", "Start date (YYYY-MM-DD)")
+	endStr := reportCmd.String("end", "", "End date (YYYY-MM-DD)")
+
+	if err := reportCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Defaults: report last 7 days
+	start := time.Now().AddDate(0, 0, -7)
+	end := time.Now()
+
+	if *startStr != "" {
+		if t, err := time.Parse("2006-01-02", *startStr); err == nil {
+			start = t
+		} else {
+			fmt.Println("Invalid start date format. Use YYYY-MM-DD.")
+			os.Exit(1)
+		}
+	}
+	if *endStr != "" {
+		if t, err := time.Parse("2006-01-02", *endStr); err == nil {
+			end = t
+		} else {
+			fmt.Println("Invalid end date format. Use YYYY-MM-DD.")
+			os.Exit(1)
+		}
+	}
+
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		log.Fatalf("Error: failed to open store: %v", err)
+	}
+	defer st.Close()
+
+	report, err := st.GenerateMarkdownReport(start, end)
+	if err != nil {
+		log.Fatalf("Error: report generation failed: %v", err)
+	}
+
+	fmt.Print(report)
 }

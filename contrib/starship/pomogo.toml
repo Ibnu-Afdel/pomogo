@@ -1,0 +1,9 @@
+# Starship prompt configuration for PomoGo
+# Append this to your ~/.config/starship.toml
+
+[custom.pomogo]
+command = "pomogo status --format waybar | jq -r '.text'"
+when = "pomogo status --format waybar | jq -e '.text != \"\"' 2>/dev/null"
+shell = ["sh", "-c"]
+style = "bold red"
+format = "[$symbol$output]($style) "

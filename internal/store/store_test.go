@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -185,8 +186,8 @@ func TestProjects(t *testing.T) {
 		t.Errorf("expected project to be archived, but it was not")
 	}
 
-	// 7. Test tasks queries
-	tasks, err := st.GetUniqueTasks()
+	// 7. Test tasks queries — scoped to project
+	tasks, err := st.GetUniqueTasks(&p.ID)
 	if err != nil {
 		t.Fatalf("failed to get unique tasks: %v", err)
 	}
@@ -194,15 +195,64 @@ func TestProjects(t *testing.T) {
 		t.Errorf("expected tasks list ['Task with project'], got %v", tasks)
 	}
 
-	// 8. Delete task name
-	if err := st.DeleteTaskName("Task with project"); err != nil {
+	// 7b. Tasks without matching project should return empty
+	otherID := int64(9999)
+	tasksOther, err := st.GetUniqueTasks(&otherID)
+	if err != nil {
+		t.Fatalf("failed to get unique tasks for other project: %v", err)
+	}
+	if len(tasksOther) != 0 {
+		t.Errorf("expected no tasks for other project, got %v", tasksOther)
+	}
+
+	// 8. Delete task name — scoped to project
+	if err := st.DeleteTaskName("Task with project", &p.ID); err != nil {
 		t.Fatalf("failed to delete task name: %v", err)
 	}
-	tasksDeleted, err := st.GetUniqueTasks()
+	tasksDeleted, err := st.GetUniqueTasks(&p.ID)
 	if err != nil {
 		t.Fatalf("failed to get unique tasks: %v", err)
 	}
 	if len(tasksDeleted) != 0 {
 		t.Errorf("expected empty tasks list after deletion, got %v", tasksDeleted)
+	}
+
+	// 9. Test exports
+	// Create another session to export
+	sess2 := &Session{
+		Type:         "work",
+		Task:         "Export Task",
+		Note:         "A note",
+		StartedAt:    now.Add(-30 * time.Minute),
+		EndedAt:      now.Add(-5 * time.Minute),
+		Completed:    true,
+		DurationSecs: 1500,
+	}
+	if err := st.SaveSession(sess2); err != nil {
+		t.Fatalf("failed to save export test session: %v", err)
+	}
+
+	jsonExport, err := st.ExportSessions("json", now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Errorf("json export failed: %v", err)
+	}
+	if !strings.Contains(jsonExport, "Export Task") {
+		t.Errorf("expected json export to contain 'Export Task', got:\n%s", jsonExport)
+	}
+
+	csvExport, err := st.ExportSessions("csv", now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Errorf("csv export failed: %v", err)
+	}
+	if !strings.Contains(csvExport, "Export Task") {
+		t.Errorf("expected csv export to contain 'Export Task', got:\n%s", csvExport)
+	}
+
+	mdReport, err := st.GenerateMarkdownReport(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Errorf("markdown report failed: %v", err)
+	}
+	if !strings.Contains(mdReport, "# PomoGo Focus Report") {
+		t.Errorf("expected markdown report title, got:\n%s", mdReport)
 	}
 }

@@ -36,6 +36,12 @@ type Config struct {
 
 	// Profiles
 	Profiles map[string]Profile `toml:"profiles"`
+
+	// Hooks
+	OnWorkStart  string `toml:"on_work_start"`
+	OnWorkEnd    string `toml:"on_work_end"`
+	OnBreakStart string `toml:"on_break_start"`
+	OnBreakEnd   string `toml:"on_break_end"`
 }
 
 // Profile represents a set of overrides for custom focus states.
