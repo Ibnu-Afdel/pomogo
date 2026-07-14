@@ -28,6 +28,11 @@ type Config struct {
 
 	// Notes
 	PromptForNotes bool `toml:"prompt_for_notes"`
+
+	// Lock & Suspend
+	PauseOnLock          bool `toml:"pause_on_lock"`
+	PauseOnSuspend       bool `toml:"pause_on_suspend"`
+	TerminalTitleEnabled bool `toml:"terminal_title_enabled"`
 }
 
 // Default returns a Config with sensible defaults (no file required).
@@ -41,6 +46,9 @@ func Default() *Config {
 		NotificationsEnabled:    true,
 		SoundEnabled:            true,
 		PromptForNotes:          true,
+		PauseOnLock:             true,
+		PauseOnSuspend:          true,
+		TerminalTitleEnabled:    true,
 	}
 }
 
@@ -176,6 +184,15 @@ sound_enabled = true
 
 # Prompt for a brief note when completing a work session (default: true)
 prompt_for_notes = true
+
+# Pause the timer automatically when the system locks (default: true)
+pause_on_lock = true
+
+# Pause the timer automatically when the system suspends (default: true)
+pause_on_suspend = true
+
+# Show the timer countdown in the terminal window title (default: true)
+terminal_title_enabled = true
 `
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

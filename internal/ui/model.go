@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
 	"github.com/Ibnu-Afdel/pomogo/internal/notify"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
@@ -65,6 +66,7 @@ type Model struct {
 	currentTask    string
 	pendingSession *store.Session
 	showStats      bool
+	lastTickTime   time.Time
 }
 
 // NewModel creates a new TUI model.
@@ -116,22 +118,54 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tickMsg:
+		now := time.Now()
+		// 1. Suspend check
+		if m.cfg.PauseOnSuspend && !m.lastTickTime.IsZero() && m.session.IsRunning && !m.session.IsPaused {
+			elapsed := now.Sub(m.lastTickTime)
+			if elapsed > 5*time.Second {
+				m.session.Pause(timer.RealClock{})
+				m.writeState()
+				if m.notifier != nil {
+					_ = m.notifier.NotifyCustom("PomoGo Resume", "Timer paused due to system suspend.", "normal")
+				}
+			}
+		}
+		m.lastTickTime = now
+
+		// 2. Lock check
+		if m.cfg.PauseOnLock && m.session.IsRunning && !m.session.IsPaused {
+			if locked, err := integrations.IsSessionLocked(); err == nil && locked {
+				m.session.Pause(timer.RealClock{})
+				m.writeState()
+				if m.notifier != nil {
+					_ = m.notifier.NotifyCustom("PomoGo Locked", "Timer paused due to screen lock.", "normal")
+				}
+			}
+		}
+
+		// 3. Update terminal title
+		var titleCmd tea.Cmd
+		if m.cfg.TerminalTitleEnabled {
+			titleCmd = m.updateTerminalTitle()
+		}
+
 		if m.session.IsRunning && !m.session.IsPaused {
 			prevPhase := m.session.Phase
 			startedAt := m.session.StartedAt
-			endsAt := m.session.EndsAt
 			duration := m.getDurationForPhase()
 
 			if m.session.Tick(timer.RealClock{}) {
-				m.recordSession(prevPhase, startedAt, endsAt, true, duration)
+				m.recordSession(prevPhase, startedAt, time.Now(), true, duration)
 				m.afterTransition(true)
-				return m, nil
+				return m, titleCmd
 			}
 		}
+
+		var tickCmd tea.Cmd
 		if m.session.IsRunning && !m.session.IsPaused {
-			return m, m.tick1s()
+			tickCmd = m.tick1s()
 		}
-		return m, nil
+		return m, tea.Batch(titleCmd, tickCmd)
 	}
 
 	if m.inputMode != modeNone {
@@ -225,6 +259,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMessage = err.Error()
 				return m, nil
 			}
+			m.lastTickTime = time.Now()
 			m.afterTransition(true)
 			return m, m.tick1s()
 		}
@@ -235,6 +270,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.statusMessage = err.Error()
 					return m, nil
 				}
+				m.lastTickTime = time.Now()
 				m.afterTransition(false)
 				return m, m.tick1s()
 			} else {
@@ -873,4 +909,27 @@ func bigClockRows(timeStr string, color lipgloss.Color) []string {
 		result[i] = style.Render(sb.String())
 	}
 	return result
+}
+
+func (m *Model) updateTerminalTitle() tea.Cmd {
+	return func() tea.Msg {
+		title := "Focus Timer"
+		if m.session.IsRunning {
+			mins := int(m.session.RemainingTime.Minutes())
+			secs := int(m.session.RemainingTime.Seconds()) % 60
+			stateStr := "work"
+			emoji := "🍅"
+			if m.session.Phase == timer.PhaseShortBreak || m.session.Phase == timer.PhaseLongBreak {
+				stateStr = "break"
+				emoji = "☕"
+			}
+			if m.session.IsPaused {
+				title = fmt.Sprintf("⏸️ %02d:%02d · %s", mins, secs, stateStr)
+			} else {
+				title = fmt.Sprintf("%s %02d:%02d · %s", emoji, mins, secs, stateStr)
+			}
+		}
+		fmt.Printf("\033]2;%s\007", title)
+		return nil
+	}
 }

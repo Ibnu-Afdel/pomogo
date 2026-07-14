@@ -24,6 +24,9 @@ func TestDefaultConfig(t *testing.T) {
 		{"NotificationsEnabled", cfg.NotificationsEnabled, true},
 		{"SoundEnabled", cfg.SoundEnabled, true},
 		{"PromptForNotes", cfg.PromptForNotes, true},
+		{"PauseOnLock", cfg.PauseOnLock, true},
+		{"PauseOnSuspend", cfg.PauseOnSuspend, true},
+		{"TerminalTitleEnabled", cfg.TerminalTitleEnabled, true},
 	}
 
 	for _, tt := range tests {
