@@ -1,0 +1,48 @@
+// Waybar configuration snippet for PomoGo integration.
+// Put this in your ~/.config/waybar/config.jsonc inside the modules list:
+//
+// "modules-right": [
+//     ...
+//     "custom/pomogo",
+//     ...
+// ],
+//
+// And define the module:
+{
+    "custom/pomogo": {
+        "exec": "pomogo status --format waybar",
+        "return-type": "json",
+        "interval": 1,
+        "format": "{}",
+        "tooltip": true
+    }
+}
+
+// Add these styling rules to your ~/.config/waybar/style.css:
+//
+// #custom-pomogo {
+//     padding: 0 10px;
+//     border-radius: 4px;
+//     margin: 4px 2px;
+//     font-weight: bold;
+// }
+//
+// #custom-pomogo.pomogo-idle {
+//     background-color: transparent;
+//     color: #565f89; /* Muted/grey text */
+// }
+//
+// #custom-pomogo.pomogo-work {
+//     background-color: #f7768e; /* Tokyo Night red background */
+//     color: #1a1b26;            /* Dark text */
+// }
+//
+// #custom-pomogo.pomogo-break {
+//     background-color: #9ece6a; /* Tokyo Night green background */
+//     color: #1a1b26;
+// }
+//
+// #custom-pomogo.pomogo-paused {
+//     background-color: #e0af68; /* Tokyo Night yellow background */
+//     color: #1a1b26;
+// }
