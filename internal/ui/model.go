@@ -110,6 +110,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.EnterAltScreen,
 		tea.EnableMouseCellMotion,
+		m.listenForDbusActions(),
 	)
 }
 
@@ -205,6 +206,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case dbusActionMsg:
+		switch string(msg) {
+		case "skip":
+			if m.session.IsRunning || m.session.IsPaused {
+				prevPhase := m.session.Phase
+				startedAt := m.session.StartedAt
+				duration := m.getDurationForPhase()
+				m.session.Skip()
+				m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
+				m.afterTransition(true)
+			}
+		case "start_work":
+			if !m.session.IsRunning {
+				_ = m.session.Start(timer.RealClock{})
+				m.afterTransition(true)
+			}
+		case "add_5":
+			m.session.AddTime(5 * time.Minute)
+			m.writeState()
+		}
+		return m, m.listenForDbusActions()
 	case clearStatusMsg:
 		m.statusMessage = ""
 		return m, nil
@@ -969,5 +991,17 @@ func copyOSC52(text string) tea.Cmd {
 		}
 		fmt.Print(seq)
 		return nil
+	}
+}
+
+type dbusActionMsg string
+
+func (m *Model) listenForDbusActions() tea.Cmd {
+	if m.notifier == nil || m.notifier.DBusNotifier() == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		action := <-m.notifier.DBusNotifier().ActionsChan()
+		return dbusActionMsg(action)
 	}
 }

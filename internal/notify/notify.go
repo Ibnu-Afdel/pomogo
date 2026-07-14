@@ -17,11 +17,22 @@ const soundEventBell = "bell"
 type Notifier struct {
 	enabled      bool
 	soundEnabled bool
+	dbusNotifier *DBusNotifier
 }
 
 // NewNotifier creates a Notifier.
 func NewNotifier(enabled, soundEnabled bool) *Notifier {
-	return &Notifier{enabled: enabled, soundEnabled: soundEnabled}
+	dn, _ := NewDBusNotifier() // Fallback is clean if D-Bus is unavailable
+	return &Notifier{
+		enabled:      enabled,
+		soundEnabled: soundEnabled,
+		dbusNotifier: dn,
+	}
+}
+
+// DBusNotifier returns the underlying DBusNotifier instance, if any.
+func (n *Notifier) DBusNotifier() *DBusNotifier {
+	return n.dbusNotifier
 }
 
 // NotifyTransition sends a notification and plays a sound on a session transition.
@@ -32,6 +43,25 @@ func (n *Notifier) NotifyTransition(state timer.SessionState, phase timer.Sessio
 		return nil
 	}
 	title, message, urgency := n.messageForTransition(state, phase)
+
+	if n.dbusNotifier != nil {
+		var actions []string
+		switch state {
+		case timer.StateWork:
+			actions = []string{"skip", "Skip Work", "add_5", "+5 Min"}
+		case timer.StateShortBreak, timer.StateLongBreak:
+			actions = []string{"skip", "Skip Break", "add_5", "+5 Min"}
+		case timer.StateIdle:
+			actions = []string{"start_work", "Start Work"}
+		}
+		
+		err := n.dbusNotifier.Send(title, message, urgency, actions)
+		if err == nil {
+			return nil
+		}
+		// Fallback to notify-send on error
+	}
+
 	return n.send(title, message, urgency)
 }
 
@@ -88,6 +118,12 @@ func (n *Notifier) playSound(state timer.SessionState) {
 }
 
 func (n *Notifier) send(title, message, urgency string) error {
+	if n.dbusNotifier != nil {
+		err := n.dbusNotifier.Send(title, message, urgency, nil)
+		if err == nil {
+			return nil
+		}
+	}
 	if _, err := exec.LookPath("notify-send"); err != nil {
 		return nil // silent no-op when notify-send is absent
 	}

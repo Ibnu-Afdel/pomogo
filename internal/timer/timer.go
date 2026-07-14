@@ -267,6 +267,17 @@ func (s *Session) Reset() {
 	s.RemainingTime = 0
 }
 
+// AddTime adds a duration to the remaining time of a running session.
+func (s *Session) AddTime(d time.Duration) {
+	if !s.IsRunning {
+		return
+	}
+	s.RemainingTime += d
+	if !s.IsPaused {
+		s.EndsAt = s.EndsAt.Add(d)
+	}
+}
+
 func (s *Session) durationForPhase() time.Duration {
 	switch s.Phase {
 	case PhaseShortBreak:
