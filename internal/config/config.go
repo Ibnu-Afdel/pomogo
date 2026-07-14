@@ -33,6 +33,19 @@ type Config struct {
 	PauseOnLock          bool `toml:"pause_on_lock"`
 	PauseOnSuspend       bool `toml:"pause_on_suspend"`
 	TerminalTitleEnabled bool `toml:"terminal_title_enabled"`
+
+	// Profiles
+	Profiles map[string]Profile `toml:"profiles"`
+}
+
+// Profile represents a set of overrides for custom focus states.
+type Profile struct {
+	WorkDuration            *int    `toml:"work_duration"`
+	ShortBreakDuration      *int    `toml:"short_break_duration"`
+	LongBreakDuration       *int    `toml:"long_break_duration"`
+	SessionsBeforeLongBreak *int    `toml:"sessions_before_long_break"`
+	Theme                   *string `toml:"theme"`
+	Project                 *string `toml:"project"`
 }
 
 // Default returns a Config with sensible defaults (no file required).
@@ -200,4 +213,41 @@ terminal_title_enabled = true
 	}
 
 	return nil
+}
+
+// ResolveProfile resolves config settings by applying profile overrides.
+// It returns a copy of the Config with overridden settings, and optionally a default project name.
+func (c *Config) ResolveProfile(name string) (*Config, string) {
+	resolved := *c
+	project := ""
+
+	if c.Profiles == nil {
+		return &resolved, project
+	}
+
+	p, exists := c.Profiles[name]
+	if !exists {
+		return &resolved, project
+	}
+
+	if p.WorkDuration != nil {
+		resolved.WorkDuration = *p.WorkDuration
+	}
+	if p.ShortBreakDuration != nil {
+		resolved.ShortBreakDuration = *p.ShortBreakDuration
+	}
+	if p.LongBreakDuration != nil {
+		resolved.LongBreakDuration = *p.LongBreakDuration
+	}
+	if p.SessionsBeforeLongBreak != nil {
+		resolved.SessionsBeforeLongBreak = *p.SessionsBeforeLongBreak
+	}
+	if p.Theme != nil {
+		resolved.Theme = *p.Theme
+	}
+	if p.Project != nil {
+		project = *p.Project
+	}
+
+	return &resolved, project
 }

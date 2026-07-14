@@ -343,3 +343,51 @@ func findSubstring(haystack, needle string) bool {
 	}
 	return false
 }
+
+func TestResolveProfile(t *testing.T) {
+	cfg := Default()
+	
+	// Create profiles
+	fifty := 50
+	ten := 10
+	themeStr := "catppuccin"
+	projStr := "backend"
+
+	cfg.Profiles = map[string]Profile{
+		"coding": {
+			WorkDuration:       &fifty,
+			ShortBreakDuration: &ten,
+			Theme:              &themeStr,
+			Project:            &projStr,
+		},
+	}
+
+	// 1. Resolve existing profile
+	resolved, project := cfg.ResolveProfile("coding")
+	if resolved.WorkDuration != 50 {
+		t.Errorf("expected WorkDuration 50, got %d", resolved.WorkDuration)
+	}
+	if resolved.ShortBreakDuration != 10 {
+		t.Errorf("expected ShortBreakDuration 10, got %d", resolved.ShortBreakDuration)
+	}
+	if resolved.Theme != "catppuccin" {
+		t.Errorf("expected Theme 'catppuccin', got %q", resolved.Theme)
+	}
+	if project != "backend" {
+		t.Errorf("expected project 'backend', got %q", project)
+	}
+
+	// 2. Fallbacks should stay intact
+	if resolved.LongBreakDuration != cfg.LongBreakDuration {
+		t.Errorf("expected LongBreakDuration fallback to %d, got %d", cfg.LongBreakDuration, resolved.LongBreakDuration)
+	}
+
+	// 3. Resolve non-existent profile
+	resolvedNon, projectNon := cfg.ResolveProfile("non-existent")
+	if resolvedNon.WorkDuration != cfg.WorkDuration {
+		t.Errorf("expected WorkDuration to be unchanged")
+	}
+	if projectNon != "" {
+		t.Errorf("expected empty project name")
+	}
+}
