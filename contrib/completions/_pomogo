@@ -1,0 +1,42 @@
+#compdef pomogo
+
+_pomogo() {
+    local -a subcmds
+    subcmds=(
+        'version:Show version information'
+        'config:Manage configuration'
+        'stats:Show focus statistics'
+        'history:Show detailed session history'
+        'status:Show current session status'
+        'completion:Generate shell completions'
+        'help:Show help message'
+    )
+    
+    _arguments \
+        '1: :->cmds' \
+        '*:: :->args'
+
+    case "$state" in
+        cmds)
+            _describe -t commands 'pomogo commands' subcmds
+            ;;
+        args)
+            case "$words[1]" in
+                config)
+                    _values 'config subcommands' 'init:Create a default config file'
+                    ;;
+                stats)
+                    _arguments '--week[Show weekly activity]' '--month[Show monthly summary]'
+                    ;;
+                completion)
+                    _values 'shells' 'zsh:Zsh completion' 'bash:Bash completion' 'fish:Fish completion'
+                    ;;
+                status)
+                    _arguments '--format[Output format]:format:(default waybar tmux json)'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+compdef _pomogo pomogo

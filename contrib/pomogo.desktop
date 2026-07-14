@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=PomoGo
+Comment=Keyboard-first Pomodoro Timer TUI
+Exec=pomogo
+Terminal=true
+Type=Application
+Icon=pomodoro
+Categories=Utility;
+Keywords=pomodoro;timer;productivity;TUI;
