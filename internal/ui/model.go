@@ -291,6 +291,11 @@ func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("restore failed: %v", err)
 			return m, nil
 		}
+		if m.stateManager != nil {
+			if st, err := m.stateManager.Read(); err == nil && st != nil {
+				m.currentTask = st.Task
+			}
+		}
 		m.session = session
 		m.restorePending = false
 		m.afterTransition(false)
@@ -769,7 +774,7 @@ func (m *Model) writeState() {
 	if m.stateManager == nil {
 		return
 	}
-	if err := m.stateManager.Write(m.session); err != nil {
+	if err := m.stateManager.Write(m.session, m.currentTask); err != nil {
 		m.statusMessage = fmt.Sprintf("state error: %v", err)
 	}
 }

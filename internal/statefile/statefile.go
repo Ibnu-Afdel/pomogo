@@ -24,6 +24,7 @@ type State struct {
 	UpdatedAt     int64  `json:"updated_at"`     // Timestamp of last update
 	StartedAt     int64  `json:"started_at"`     // Unix timestamp when current session started
 	TotalSecs     int    `json:"total_secs"`     // Total seconds in the current phase
+	Task          string `json:"task,omitempty"` // Active task description
 }
 
 // Manager handles reading and writing session state.
@@ -47,7 +48,11 @@ func NewManager() (*Manager, error) {
 }
 
 // Write atomically writes the session state to disk.
-func (m *Manager) Write(session *timer.Session) error {
+func (m *Manager) Write(session *timer.Session, task ...string) error {
+	taskStr := ""
+	if len(task) > 0 {
+		taskStr = task[0]
+	}
 	remaining := session.RemainingTime
 	if session.IsRunning && !session.IsPaused {
 		remaining = time.Until(session.EndsAt)
@@ -67,6 +72,7 @@ func (m *Manager) Write(session *timer.Session) error {
 		UpdatedAt:     time.Now().Unix(),
 		StartedAt:     session.StartedAt.Unix(),
 		TotalSecs:     int(totalForPhase(session).Seconds()),
+		Task:          taskStr,
 	}
 
 	// Marshal to JSON
