@@ -37,6 +37,8 @@ func main() {
 		handleConfig()
 	case "stats":
 		handleStats()
+	case "history":
+		handleHistory()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -97,6 +99,7 @@ func handleHelp() {
 	fmt.Println("  version            Show version information")
 	fmt.Println("  config init        Create a default config file")
 	fmt.Println("  stats              Show focus statistics")
+	fmt.Println("  history            Show detailed session history")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
@@ -163,6 +166,56 @@ func handleStats() {
 	fmt.Printf("Current Streak:    %d days\n", s.CurrentStreak)
 	fmt.Printf("Best Streak:       %d days\n", s.BestStreak)
 	fmt.Printf("Monthly Completed: %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
+}
+
+func handleHistory() {
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	start := now.AddDate(-1, 0, 0)
+	sessions, err := st.GetSessions(start, now.Add(24*time.Hour))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Recent Work Sessions:")
+	fmt.Println("---------------------")
+	count := 0
+	for i := len(sessions) - 1; i >= 0; i-- {
+		s := sessions[i]
+		if s.Type != "work" {
+			continue
+		}
+		status := "completed"
+		if !s.Completed {
+			status = "skipped"
+		}
+		
+		task := s.Task
+		if task == "" {
+			task = "[no task]"
+		}
+		
+		timeStr := s.StartedAt.Local().Format("2006-01-02 15:04")
+		fmt.Printf("%s  %-15s (%s)", timeStr, task, status)
+		if s.Note != "" {
+			fmt.Printf(" - %s", s.Note)
+		}
+		fmt.Println()
+		count++
+		if count >= 20 { // show last 20 work sessions
+			break
+		}
+	}
+	if count == 0 {
+		fmt.Println("No work sessions recorded yet.")
+	}
 }
 
 func init() {

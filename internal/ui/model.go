@@ -607,7 +607,15 @@ func (m *Model) renderStatsScreen() string {
 		return lipgloss.NewStyle().Width(textW).Align(lipgloss.Center).Render(s)
 	}
 
-	s := m.getStats()
+	now := time.Now()
+	var sessions []*store.Session
+	if m.dbStore != nil {
+		start := now.AddDate(-1, 0, 0)
+		if s, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour)); err == nil {
+			sessions = s
+		}
+	}
+	s := stats.Calculate(sessions, now)
 
 	// Today stats
 	todayStr := fmt.Sprintf("Today: %d sessions (%d mins focused)", s.TodayCount, s.TodayMinutes)
@@ -621,6 +629,46 @@ func (m *Model) renderStatsScreen() string {
 	// Week graph title
 	graphTitle := lipgloss.NewStyle().Foreground(accent).Bold(true).Render("Weekly Focus Activity")
 	graph := weekBarGraph(s.WeekDays, color, muted)
+
+	// Recent sessions
+	var recent []*store.Session
+	for i := len(sessions) - 1; i >= 0 && len(recent) < 3; i-- {
+		if sessions[i].Type == "work" {
+			recent = append(recent, sessions[i])
+		}
+	}
+
+	recentTitle := lipgloss.NewStyle().Foreground(accent).Bold(true).Render("Recent Work Sessions")
+	
+	var recentLines []string
+	if len(recent) == 0 {
+		recentLines = append(recentLines, lipgloss.NewStyle().Foreground(muted).Render("No sessions recorded yet"))
+	} else {
+		for _, r := range recent {
+			timeStr := r.StartedAt.Local().Format("15:04")
+			taskStr := r.Task
+			if taskStr == "" {
+				taskStr = "[no task]"
+			}
+			
+			status := "completed"
+			statusColor := color
+			if !r.Completed {
+				status = "skipped"
+				statusColor = muted
+			}
+
+			line := fmt.Sprintf("%s  %s (%s)", 
+				lipgloss.NewStyle().Foreground(muted).Render(timeStr),
+				lipgloss.NewStyle().Bold(true).Render(taskStr),
+				lipgloss.NewStyle().Foreground(statusColor).Render(status),
+			)
+			if r.Note != "" {
+				line += lipgloss.NewStyle().Foreground(muted).Render(" - " + r.Note)
+			}
+			recentLines = append(recentLines, line)
+		}
+	}
 
 	// Hints
 	hints := lipgloss.NewStyle().Foreground(muted).Render("Tab timer  ·  ? help  ·  q quit")
@@ -655,6 +703,28 @@ func (m *Model) renderStatsScreen() string {
 	}
 	lines = append(lines, strings.Join(paddedGraphLines, "\n"))
 	
+	lines = append(lines, "")
+	lines = append(lines, center(recentTitle))
+	lines = append(lines, "")
+
+	// Center recent sessions block
+	maxRecentLen := 0
+	for _, l := range recentLines {
+		length := lipgloss.Width(l)
+		if length > maxRecentLen {
+			maxRecentLen = length
+		}
+	}
+	rPad := (textW - maxRecentLen) / 2
+	if rPad < 0 {
+		rPad = 0
+	}
+	var paddedRecentLines []string
+	for _, l := range recentLines {
+		paddedRecentLines = append(paddedRecentLines, strings.Repeat(" ", rPad)+l)
+	}
+	lines = append(lines, strings.Join(paddedRecentLines, "\n"))
+
 	lines = append(lines, "")
 	lines = append(lines, center(hints))
 	lines = append(lines, "")
