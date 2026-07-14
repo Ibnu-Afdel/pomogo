@@ -72,6 +72,9 @@ type Model struct {
 	lastTickTime       time.Time
 	currentProjectID   *int64
 	currentProjectName string
+	suggestions        []string
+	filteredSuggestions []string
+	suggestionIndex    int
 }
 
 // NewModel creates a new TUI model.
@@ -187,8 +190,61 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputMode = modeNone
 				m.textInput.Blur()
 				return m, nil
+			case "down":
+				if m.inputMode == modeTaskInput || m.inputMode == modeProjectInput {
+					if len(m.filteredSuggestions) > 0 {
+						m.suggestionIndex++
+						if m.suggestionIndex >= len(m.filteredSuggestions) {
+							m.suggestionIndex = len(m.filteredSuggestions) - 1
+						}
+						return m, nil
+					}
+				}
+			case "up":
+				if m.inputMode == modeTaskInput || m.inputMode == modeProjectInput {
+					m.suggestionIndex--
+					if m.suggestionIndex < -1 {
+						m.suggestionIndex = -1
+					}
+					return m, nil
+				}
+			case "tab":
+				if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && m.suggestionIndex >= 0 {
+					m.textInput.SetValue(m.filteredSuggestions[m.suggestionIndex])
+					m.suggestionIndex = -1
+					m.filterSuggestions()
+					return m, nil
+				}
+			case "ctrl+d":
+				if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && m.suggestionIndex >= 0 && m.suggestionIndex < len(m.filteredSuggestions) {
+					item := m.filteredSuggestions[m.suggestionIndex]
+					if m.inputMode == modeTaskInput {
+						_ = m.dbStore.DeleteTaskName(item)
+						if list, err := m.dbStore.GetUniqueTasks(); err == nil {
+							m.suggestions = list
+						}
+					} else {
+						_ = m.dbStore.ArchiveProject(item)
+						if list, err := m.dbStore.GetProjects(); err == nil {
+							var active []string
+							for _, p := range list {
+								if !p.Archived {
+									active = append(active, p.Name)
+								}
+							}
+							m.suggestions = active
+						}
+					}
+					m.suggestionIndex = -1
+					m.filterSuggestions()
+					return m, nil
+				}
 			case "enter":
 				val := strings.TrimSpace(m.textInput.Value())
+				if m.suggestionIndex >= 0 && m.suggestionIndex < len(m.filteredSuggestions) {
+					val = m.filteredSuggestions[m.suggestionIndex]
+				}
+
 				if m.inputMode == modeTaskInput {
 					m.currentTask = val
 				} else if m.inputMode == modeNoteInput && m.pendingSession != nil {
@@ -228,6 +284,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
+		m.filterSuggestions()
 		return m, cmd
 	}
 
@@ -349,6 +406,14 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.SetValue(m.currentTask)
 			m.textInput.Placeholder = "Enter current task..."
 			m.textInput.Focus()
+			m.suggestions = nil
+			if m.dbStore != nil {
+				if list, err := m.dbStore.GetUniqueTasks(); err == nil {
+					m.suggestions = list
+				}
+			}
+			m.filteredSuggestions = m.suggestions
+			m.suggestionIndex = -1
 		}
 	case "p":
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
@@ -356,6 +421,20 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.SetValue(m.currentProjectName)
 			m.textInput.Placeholder = "Enter project name..."
 			m.textInput.Focus()
+			m.suggestions = nil
+			if m.dbStore != nil {
+				if list, err := m.dbStore.GetProjects(); err == nil {
+					var active []string
+					for _, p := range list {
+						if !p.Archived {
+							active = append(active, p.Name)
+						}
+					}
+					m.suggestions = active
+				}
+			}
+			m.filteredSuggestions = m.suggestions
+			m.suggestionIndex = -1
 		}
 	case "tab":
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
@@ -874,20 +953,41 @@ func (m *Model) renderInputScreen() string {
 		title = "Set Project Name"
 	}
 
-	rows := []string{
-		lipgloss.NewStyle().Foreground(color).Bold(true).Render(title),
-		"",
-		m.textInput.View(),
-		"",
-		lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String())).Render("enter save  ·  esc cancel"),
+	var rows []string
+	rows = append(rows, lipgloss.NewStyle().Foreground(color).Bold(true).Render(title))
+	rows = append(rows, "")
+	rows = append(rows, m.textInput.View())
+	rows = append(rows, "")
+
+	if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && len(m.filteredSuggestions) > 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(color).Bold(true).Render("Suggestions:"))
+		for i, s := range m.filteredSuggestions {
+			if i >= 5 {
+				break
+			}
+			indicator := "  "
+			itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String()))
+			if i == m.suggestionIndex {
+				indicator = "> "
+				itemStyle = lipgloss.NewStyle().Foreground(color).Bold(true)
+			}
+			rows = append(rows, indicator+itemStyle.Render(s))
+		}
+		rows = append(rows, "")
 	}
+
+	footer := "enter save  ·  esc cancel"
+	if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && len(m.filteredSuggestions) > 0 {
+		footer = "↓/↑ navigate  ·  tab select  ·  ctrl+d delete  ·  enter save"
+	}
+	rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String())).Render(footer))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(color).
 		Padding(1, 4).
 		Width(40).
-		Align(lipgloss.Center).
+		Align(lipgloss.Left).
 		Render(strings.Join(rows, "\n"))
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
@@ -1081,5 +1181,27 @@ func (m *Model) SetProjectByName(name string) {
 func (m *Model) SetCustomSoundEvent(event string) {
 	if m.notifier != nil {
 		m.notifier.SetCustomSoundEvent(event)
+	}
+}
+
+func (m *Model) filterSuggestions() {
+	val := strings.ToLower(strings.TrimSpace(m.textInput.Value()))
+	if val == "" {
+		m.filteredSuggestions = m.suggestions
+	} else {
+		var filtered []string
+		for _, s := range m.suggestions {
+			if strings.Contains(strings.ToLower(s), val) {
+				filtered = append(filtered, s)
+			}
+		}
+		m.filteredSuggestions = filtered
+	}
+
+	if m.suggestionIndex >= len(m.filteredSuggestions) {
+		m.suggestionIndex = len(m.filteredSuggestions) - 1
+	}
+	if m.suggestionIndex < -1 {
+		m.suggestionIndex = -1
 	}
 }

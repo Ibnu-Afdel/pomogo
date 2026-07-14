@@ -209,6 +209,33 @@ func (s *Store) ArchiveProject(name string) error {
 	return err
 }
 
+// GetUniqueTasks returns distinct task names, ordered by recency.
+func (s *Store) GetUniqueTasks() ([]string, error) {
+	query := `SELECT DISTINCT task FROM sessions WHERE task IS NOT NULL AND task != '' ORDER BY started_at DESC LIMIT 50`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []string
+	for rows.Next() {
+		var task string
+		if err := rows.Scan(&task); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+// DeleteTaskName clears the task description from all sessions matching the task name.
+func (s *Store) DeleteTaskName(task string) error {
+	query := `UPDATE sessions SET task = NULL WHERE task = ?`
+	_, err := s.db.Exec(query, task)
+	return err
+}
+
 func (s *Store) runMigrations() error {
 	// First, ensure the schema_migrations table exists
 	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (

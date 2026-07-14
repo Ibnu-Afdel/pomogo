@@ -184,4 +184,25 @@ func TestProjects(t *testing.T) {
 	if !fetchedArchived.Archived {
 		t.Errorf("expected project to be archived, but it was not")
 	}
+
+	// 7. Test tasks queries
+	tasks, err := st.GetUniqueTasks()
+	if err != nil {
+		t.Fatalf("failed to get unique tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0] != "Task with project" {
+		t.Errorf("expected tasks list ['Task with project'], got %v", tasks)
+	}
+
+	// 8. Delete task name
+	if err := st.DeleteTaskName("Task with project"); err != nil {
+		t.Fatalf("failed to delete task name: %v", err)
+	}
+	tasksDeleted, err := st.GetUniqueTasks()
+	if err != nil {
+		t.Fatalf("failed to get unique tasks: %v", err)
+	}
+	if len(tasksDeleted) != 0 {
+		t.Errorf("expected empty tasks list after deletion, got %v", tasksDeleted)
+	}
 }

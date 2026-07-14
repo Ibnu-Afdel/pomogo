@@ -394,3 +394,33 @@ func TestProjectInput(t *testing.T) {
 		t.Errorf("expected ProjectName 'frontend', got %q", sessions[0].ProjectName)
 	}
 }
+
+func TestSuggestionsAndNavigation(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+
+	// Set suggestions manually
+	model.suggestions = []string{"backend", "frontend", "sprint-dev"}
+	model.textInput.SetValue("ba")
+	model.filterSuggestions()
+
+	if len(model.filteredSuggestions) != 1 || model.filteredSuggestions[0] != "backend" {
+		t.Errorf("expected filteredSuggestions ['backend'], got %v", model.filteredSuggestions)
+	}
+
+	// Pressing Down should highlight 'backend'
+	model.inputMode = modeProjectInput
+	model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyDown}))
+	if model.suggestionIndex != 0 {
+		t.Errorf("expected suggestionIndex 0, got %d", model.suggestionIndex)
+	}
+
+	// Pressing Tab should select 'backend'
+	model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	if model.textInput.Value() != "backend" {
+		t.Errorf("expected textInput value 'backend', got %q", model.textInput.Value())
+	}
+	if model.suggestionIndex != -1 {
+		t.Errorf("expected suggestionIndex reset to -1, got %d", model.suggestionIndex)
+	}
+}
