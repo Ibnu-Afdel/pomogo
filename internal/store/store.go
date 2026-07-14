@@ -209,6 +209,13 @@ func (s *Store) ArchiveProject(name string) error {
 	return err
 }
 
+// UnarchiveProject marks a project as active (not archived).
+func (s *Store) UnarchiveProject(name string) error {
+	query := `UPDATE projects SET archived = 0 WHERE name = ?`
+	_, err := s.db.Exec(query, name)
+	return err
+}
+
 // GetUniqueTasks returns distinct task names, ordered by recency.
 func (s *Store) GetUniqueTasks() ([]string, error) {
 	query := `SELECT DISTINCT task FROM sessions WHERE task IS NOT NULL AND task != '' ORDER BY started_at DESC LIMIT 50`

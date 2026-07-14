@@ -283,6 +283,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									m.statusMessage = fmt.Sprintf("database error: %v", err)
 								}
 							} else {
+								if p.Archived {
+									_ = m.dbStore.UnarchiveProject(p.Name)
+								}
 								m.currentProjectID = &p.ID
 								m.currentProjectName = p.Name
 							}
@@ -1184,6 +1187,9 @@ func (m *Model) SetProjectByName(name string) {
 				m.currentProjectName = p.Name
 			}
 		} else {
+			if p.Archived {
+				_ = m.dbStore.UnarchiveProject(p.Name)
+			}
 			m.currentProjectID = &p.ID
 			m.currentProjectName = p.Name
 		}
