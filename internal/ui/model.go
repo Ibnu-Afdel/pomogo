@@ -1052,3 +1052,27 @@ func (m *Model) listenForDbusActions() tea.Cmd {
 		return dbusActionMsg(action)
 	}
 }
+
+// SetProjectByName binds a project to the model by name.
+func (m *Model) SetProjectByName(name string) {
+	if name == "" {
+		m.currentProjectID = nil
+		m.currentProjectName = ""
+		return
+	}
+	if m.dbStore != nil {
+		p, err := m.dbStore.GetProjectByName(name)
+		if err != nil {
+			p = &store.Project{Name: name}
+			if err := m.dbStore.CreateProject(p); err == nil {
+				m.currentProjectID = &p.ID
+				m.currentProjectName = p.Name
+			}
+		} else {
+			m.currentProjectID = &p.ID
+			m.currentProjectName = p.Name
+		}
+	} else {
+		m.currentProjectName = name
+	}
+}

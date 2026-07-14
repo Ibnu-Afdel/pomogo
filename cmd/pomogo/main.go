@@ -47,6 +47,8 @@ func main() {
 		handleCompletion()
 	case "projects":
 		handleProjects()
+	case "start":
+		handleStart()
 	case "help", "-h", "--help":
 		handleHelp()
 	default:
@@ -111,6 +113,7 @@ func handleHelp() {
 	fmt.Println("  status             Show current session status")
 	fmt.Println("  completion         Generate shell completion scripts")
 	fmt.Println("  projects           Manage focus projects")
+	fmt.Println("  start [profile|prj] Start timer with a specific profile or project")
 	fmt.Println("  help               Show this help message")
 	fmt.Println()
 	fmt.Println("Run 'pomogo' to start the timer.")
@@ -459,5 +462,52 @@ func listProjects(st *store.Store) {
 		for _, a := range archived {
 			fmt.Printf("  - %s (archived)\n", a)
 		}
+	}
+}
+
+func handleStart() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: pomogo start [profile|project]")
+		os.Exit(1)
+	}
+	target := os.Args[2]
+
+	// Load config
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	project := ""
+	// 1. Check if profile matches
+	if cfg.Profiles != nil {
+		if _, exists := cfg.Profiles[target]; exists {
+			cfg, project = cfg.ResolveProfile(target)
+		}
+	}
+
+	// 2. If it wasn't resolved as a profile, check if it matches a project in the database
+	if project == "" {
+		st, err := store.New(config.DBFilePath())
+		if err == nil {
+			if p, err := st.GetProjectByName(target); err == nil && p != nil {
+				project = p.Name
+			}
+			st.Close()
+		}
+	}
+
+	// If it matched neither a profile nor a project, we treat the target as the active project name
+	if project == "" {
+		project = target
+	}
+
+	// Launch TUI with resolved config and project
+	model := ui.NewModel(cfg)
+	model.SetProjectByName(project)
+
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 }
