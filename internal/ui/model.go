@@ -87,6 +87,17 @@ func NewModel(cfg *config.Config) *Model {
 		statusMsg = fmt.Sprintf("database error: %v", err)
 	}
 
+	var task string
+	var projectID *int64
+	var projectName string
+	if manager != nil {
+		if state, err := manager.Read(); err == nil && state != nil {
+			task = state.Task
+			projectID = state.ProjectID
+			projectName = state.ProjectName
+		}
+	}
+
 	ti := textinput.New()
 	ti.Width = 30
 
@@ -97,17 +108,20 @@ func NewModel(cfg *config.Config) *Model {
 			cfg.LongBreakDurationAsDuration(),
 			cfg.SessionsBeforeLongBreak,
 		),
-		cfg:            cfg,
-		theme:          th,
-		width:          80,
-		height:         24,
-		notifier:       notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
-		stateManager:   manager,
-		dbStore:        st,
-		restorePending: restore.CanRestore(),
-		statusMessage:  statusMsg,
-		textInput:      ti,
-		inputMode:      modeNone,
+		cfg:                cfg,
+		theme:              th,
+		width:              80,
+		height:             24,
+		notifier:           notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
+		stateManager:       manager,
+		dbStore:            st,
+		restorePending:     restore.CanRestore(),
+		statusMessage:      statusMsg,
+		textInput:          ti,
+		inputMode:          modeNone,
+		currentTask:        task,
+		currentProjectID:   projectID,
+		currentProjectName: projectName,
 	}
 }
 
@@ -279,6 +293,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.inputMode = modeNone
 				m.textInput.Blur()
+				m.writeState()
 				return m, nil
 			}
 		}
@@ -490,7 +505,11 @@ func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.tick1s()
 	case "n", "N", "esc":
 		m.restorePending = false
-		m.removeState()
+		m.session.State = timer.StateIdle
+		m.session.Phase = timer.PhaseWork
+		m.session.IsRunning = false
+		m.session.IsPaused = false
+		m.writeState()
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	}
@@ -1010,11 +1029,7 @@ func (m *Model) removeState() {
 }
 
 func (m *Model) persistOnQuit() {
-	if m.session.IsRunning {
-		m.writeState()
-		return
-	}
-	m.removeState()
+	m.writeState()
 }
 
 // phaseLabel returns a human-readable name for the current phase.

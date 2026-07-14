@@ -25,6 +25,10 @@ func CanRestore() bool {
 		return false
 	}
 
+	if state.SessionState == "idle" || state.SessionState == "" {
+		return false
+	}
+
 	// Check if session is expired
 	if statefile.IsExpired(state) {
 		return false
