@@ -28,9 +28,10 @@ builds:
 
 archives:
   - id: pomogo-archive
-    builds:
+    ids:
       - pomogo
-    format: tar.gz
+    formats:
+      - tar.gz
     
     name_template: >-
       {{ .ProjectName }}-
@@ -49,14 +50,15 @@ archives:
     
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: "{{ .ProjectName }}-{{ .Version }}-checksums.txt"
   algorithm: sha256
 
 snapshot:
-  name_template: "{{ .Tag }}-snapshot"
+  version_template: "{{ .Tag }}-snapshot"
 
 changelog:
   use: github
