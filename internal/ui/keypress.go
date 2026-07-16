@@ -111,7 +111,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "d":
 			m.inputMode = modeDurationPicker
-			m.selectedDurationIdx = 0
+			m.selectedDurationIdx = durationIndex(m.cfg.DeepFocusDefaultDurationAsDuration())
 			return m, nil
 		}
 	}
@@ -367,6 +367,15 @@ func parseCustomDuration(val string) (time.Duration, error) {
 		return time.Duration(mins) * time.Minute, nil
 	}
 	return 0, fmt.Errorf("invalid duration format")
+}
+
+func durationIndex(d time.Duration) int {
+	for i := 0; i < 4; i++ {
+		if d == time.Duration(i+1)*time.Hour {
+			return i
+		}
+	}
+	return 4
 }
 
 func (m *Model) filterSuggestions() {

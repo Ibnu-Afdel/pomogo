@@ -1,16 +1,20 @@
 package screens
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // DurationPicker renders the Deep Focus duration selection screen.
-func DurationPicker(width, height int, th *theme.Theme, selectedIdx int) string {
+func DurationPicker(width, height int, th *theme.Theme, selectedIdx int, defaultDuration, workDuration, breakDuration time.Duration) string {
 	color := lipgloss.Color(th.Accent.String())
+	muted := lipgloss.Color(th.Muted.String())
 	title := "Deep Focus Duration"
+	rhythm := fmt.Sprintf("%s block · %s/%s internal rhythm", formatDuration(defaultDuration), formatDuration(workDuration), formatDuration(breakDuration))
 
 	options := []string{
 		"1 hour",
@@ -22,11 +26,15 @@ func DurationPicker(width, height int, th *theme.Theme, selectedIdx int) string 
 
 	var rows []string
 	rows = append(rows, lipgloss.NewStyle().Foreground(color).Bold(true).Render(title))
+	rows = append(rows, lipgloss.NewStyle().Foreground(muted).Render(rhythm))
 	rows = append(rows, "")
 
 	for i, opt := range options {
 		indicator := "  "
-		itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Muted.String()))
+		itemStyle := lipgloss.NewStyle().Foreground(muted)
+		if presetDuration(i) == defaultDuration {
+			opt += "  default"
+		}
 		if i == selectedIdx {
 			indicator = "> "
 			itemStyle = lipgloss.NewStyle().Foreground(color).Bold(true)
@@ -36,15 +44,32 @@ func DurationPicker(width, height int, th *theme.Theme, selectedIdx int) string 
 	rows = append(rows, "")
 
 	footer := "↓/↑ navigate  ·  enter select  ·  esc cancel"
-	rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(th.Muted.String())).Render(footer))
+	rows = append(rows, lipgloss.NewStyle().Foreground(muted).Render(footer))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(color).
 		Padding(1, 4).
-		Width(40).
+		Width(48).
 		Align(lipgloss.Left).
 		Render(strings.Join(rows, "\n"))
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func presetDuration(idx int) time.Duration {
+	if idx >= 0 && idx <= 3 {
+		return time.Duration(idx+1) * time.Hour
+	}
+	return 0
+}
+
+func formatDuration(d time.Duration) string {
+	if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(d/time.Hour))
+	}
+	if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	return d.String()
 }

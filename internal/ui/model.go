@@ -183,7 +183,15 @@ func (m *Model) View() string {
 	}
 
 	if m.inputMode == modeDurationPicker {
-		return screens.DurationPicker(m.width, m.height, m.theme, m.selectedDurationIdx)
+		return screens.DurationPicker(
+			m.width,
+			m.height,
+			m.theme,
+			m.selectedDurationIdx,
+			m.cfg.DeepFocusDefaultDurationAsDuration(),
+			m.cfg.DeepFocusWorkDurationAsDuration(),
+			m.cfg.DeepFocusShortBreakDurationAsDuration(),
+		)
 	}
 
 	if m.inputMode == modeCustomDurationInput {
