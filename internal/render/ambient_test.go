@@ -1,6 +1,7 @@
 package render
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
@@ -22,5 +23,23 @@ func TestAmbientDeterminism(t *testing.T) {
 				t.Errorf("ambient effect %s is not deterministic", eff)
 			}
 		})
+	}
+}
+
+func TestAmbientShowsThroughWhitespace(t *testing.T) {
+	th := theme.TokyoNight()
+	f := Frame{Width: 40, Height: 10}
+	var lines []string
+	for i := 0; i < f.Height; i++ {
+		lines = append(lines, strings.Repeat(" ", f.Width))
+	}
+	content := strings.Join(lines, "\n")
+
+	got := RenderAmbient("stars", 1, f, th, content)
+	if got == content {
+		t.Fatal("ambient output stayed blank; whitespace should reveal particles")
+	}
+	if !strings.ContainsAny(got, ".*+") {
+		t.Fatalf("ambient output does not contain visible star particles: %q", got)
 	}
 }

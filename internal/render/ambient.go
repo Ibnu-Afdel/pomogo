@@ -4,9 +4,11 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // hash is a fast, deterministic pseudo-random hash function with 0 allocations.
@@ -101,6 +103,12 @@ func RenderAmbient(effect string, tickCount int, f Frame, th *theme.Theme, layou
 
 	startY := (f.Height - contentHeight) / 2
 	startX := (f.Width - contentWidth) / 2
+	if startY < 0 {
+		startY = 0
+	}
+	if startX < 0 {
+		startX = 0
+	}
 
 	// Render final composite frame
 	merged := make([]string, f.Height)
@@ -109,20 +117,58 @@ func RenderAmbient(effect string, tickCount int, f Frame, th *theme.Theme, layou
 			lineIdx := y - startY
 			contentLine := contentLines[lineIdx]
 
-			// Pad content line to max width
-			padded := lipgloss.NewStyle().Width(contentWidth).Render(contentLine)
-
-			// Join background parts left and right
+			overlayWidth := contentWidth
+			if startX+overlayWidth > f.Width {
+				overlayWidth = f.Width - startX
+			}
+			padded := lipgloss.NewStyle().Width(overlayWidth).Render(contentLine)
 			leftBg := strings.Join(bgGrid[y][:startX], "")
-			rightBg := strings.Join(bgGrid[y][startX+contentWidth:], "")
+			overlay := overlayLine(bgGrid[y][startX:startX+overlayWidth], padded)
+			rightBg := strings.Join(bgGrid[y][startX+overlayWidth:], "")
 
-			merged[y] = leftBg + padded + rightBg
+			merged[y] = leftBg + overlay + rightBg
 		} else {
 			merged[y] = strings.Join(bgGrid[y], "")
 		}
 	}
 
 	return strings.Join(merged, "\n")
+}
+
+func overlayLine(bg []string, content string) string {
+	var out strings.Builder
+	col := 0
+	for i := 0; i < len(content); {
+		if content[i] == '\x1b' {
+			end := i + 1
+			for end < len(content) {
+				b := content[end]
+				end++
+				if b >= 0x40 && b <= 0x7e {
+					break
+				}
+			}
+			out.WriteString(content[i:end])
+			i = end
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(content[i:])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		w := runewidth.RuneWidth(r)
+		if r == ' ' && col < len(bg) {
+			out.WriteString(bg[col])
+		} else {
+			out.WriteString(content[i : i+size])
+		}
+		if w > 0 {
+			col += w
+		}
+		i += size
+	}
+	return out.String()
 }
 
 // ResolveEffectsName resolves "random" to a concrete effect name.
