@@ -544,6 +544,7 @@ func TestCombinationSweepNoPanics(t *testing.T) {
 	themes := []string{
 		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
 		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
+		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
 	}
 	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
 	sizes := []struct{ w, h int }{

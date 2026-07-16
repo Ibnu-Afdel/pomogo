@@ -45,6 +45,11 @@ var Registry = map[string]*Theme{
 	"dracula":          Dracula(),
 	"kanagawa":         Kanagawa(),
 	"carbon":           Carbon(),
+	"night-owl":        NightOwl(),
+	"one-dark":         OneDark(),
+	"ayu-mirage":       AyuMirage(),
+	"solarized-dark":   SolarizedDark(),
+	"oxocarbon":        Oxocarbon(),
 }
 
 // Get retrieves a theme by name. Returns default (Tokyo Night) if not found.
@@ -287,6 +292,116 @@ func Carbon() *Theme {
 		ProgressTrack: "#161616",
 		Ambient:       "#262626",
 		Description:   "Monochrome, high-contrast gray scheme.",
+	}
+}
+
+// NightOwl returns the Night Owl theme.
+// Palette source: https://github.com/sdras/night-owl-vscode-theme
+func NightOwl() *Theme {
+	return &Theme{
+		Name:          "night-owl",
+		Work:          "#ef5350",
+		Break:         "#82aaff",
+		LongBreak:     "#22da6e",
+		Idle:          "#637777",
+		Accent:        "#c792ea",
+		Background:    "#011627",
+		Text:          "#d6deeb",
+		Muted:         "#637777",
+		Subtle:        "#0b2942",
+		Border:        "#1d3b53",
+		ProgressFill:  "#82aaff",
+		ProgressTrack: "#01111d",
+		Ambient:       "#0b253a",
+		Description:   "High-contrast blue night palette for late coding.",
+	}
+}
+
+// OneDark returns the One Dark theme.
+// Palette source: https://github.com/atom/atom/tree/master/packages/one-dark-syntax
+func OneDark() *Theme {
+	return &Theme{
+		Name:          "one-dark",
+		Work:          "#e06c75",
+		Break:         "#61afef",
+		LongBreak:     "#98c379",
+		Idle:          "#5c6370",
+		Accent:        "#c678dd",
+		Background:    "#282c34",
+		Text:          "#abb2bf",
+		Muted:         "#5c6370",
+		Subtle:        "#2c313c",
+		Border:        "#3e4451",
+		ProgressFill:  "#61afef",
+		ProgressTrack: "#21252b",
+		Ambient:       "#21252b",
+		Description:   "Atom's classic balanced dark editor palette.",
+	}
+}
+
+// AyuMirage returns the Ayu Mirage theme.
+// Palette source: https://github.com/ayu-theme/ayu-colors
+func AyuMirage() *Theme {
+	return &Theme{
+		Name:          "ayu-mirage",
+		Work:          "#f07178",
+		Break:         "#59c2ff",
+		LongBreak:     "#bbe67e",
+		Idle:          "#607080",
+		Accent:        "#ffcc66",
+		Background:    "#1f2430",
+		Text:          "#cbccc6",
+		Muted:         "#707a8c",
+		Subtle:        "#242936",
+		Border:        "#343f4c",
+		ProgressFill:  "#ffcc66",
+		ProgressTrack: "#1b1f29",
+		Ambient:       "#191e2a",
+		Description:   "Warm, low-glare Ayu palette for all-day focus.",
+	}
+}
+
+// SolarizedDark returns the Solarized Dark theme.
+// Palette source: https://ethanschoonover.com/solarized/
+func SolarizedDark() *Theme {
+	return &Theme{
+		Name:          "solarized-dark",
+		Work:          "#dc322f",
+		Break:         "#268bd2",
+		LongBreak:     "#859900",
+		Idle:          "#586e75",
+		Accent:        "#b58900",
+		Background:    "#002b36",
+		Text:          "#839496",
+		Muted:         "#586e75",
+		Subtle:        "#073642",
+		Border:        "#657b83",
+		ProgressFill:  "#2aa198",
+		ProgressTrack: "#073642",
+		Ambient:       "#073642",
+		Description:   "Precision low-contrast palette built for terminals.",
+	}
+}
+
+// Oxocarbon returns the Oxocarbon theme.
+// Palette source: https://github.com/nyoom-engineering/oxocarbon
+func Oxocarbon() *Theme {
+	return &Theme{
+		Name:          "oxocarbon",
+		Work:          "#ee5396",
+		Break:         "#33b1ff",
+		LongBreak:     "#42be65",
+		Idle:          "#525252",
+		Accent:        "#be95ff",
+		Background:    "#161616",
+		Text:          "#f2f4f8",
+		Muted:         "#78a9ff",
+		Subtle:        "#262626",
+		Border:        "#393939",
+		ProgressFill:  "#08bdba",
+		ProgressTrack: "#262626",
+		Ambient:       "#0f0f0f",
+		Description:   "IBM-inspired cyberpunk palette with crisp accents.",
 	}
 }
 

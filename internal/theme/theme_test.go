@@ -31,11 +31,12 @@ func TestTokyoNightTheme(t *testing.T) {
 	}
 }
 
-// TestRegistry tests that all 10 themes are registered.
+// TestRegistry tests that all built-in themes are registered.
 func TestRegistry(t *testing.T) {
 	expectedThemes := []string{
 		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
 		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
+		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
 	}
 
 	for _, name := range expectedThemes {
@@ -77,8 +78,8 @@ func TestGet(t *testing.T) {
 func TestList(t *testing.T) {
 	themes := List()
 
-	if len(themes) != 10 {
-		t.Errorf("List() returned %d themes, want 10", len(themes))
+	if len(themes) != 15 {
+		t.Errorf("List() returned %d themes, want 15", len(themes))
 	}
 }
 
