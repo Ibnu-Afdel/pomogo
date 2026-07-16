@@ -61,7 +61,7 @@ snapshot:
   version_template: "{{ .Tag }}-snapshot"
 
 changelog:
-  use: github
+  use: git
   sort: asc
   filters:
     exclude:
