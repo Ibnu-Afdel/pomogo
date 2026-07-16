@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ibnu-Afdel/pomogo/internal/notify"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
 	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
@@ -67,6 +68,44 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.textInput.SetValue("")
 				m.textInput.Placeholder = "e.g., 1h30m, 90m..."
 				m.textInput.Focus()
+			}
+		}
+		return m, nil
+	}
+
+	if m.inputMode == modeSoundPicker {
+		profiles := notify.SoundProfiles()
+		switch {
+		case msg.String() == "q" || msg.String() == "ctrl+c":
+			m.persistOnQuit()
+			return m, tea.Quit
+		case msg.Type == tea.KeyUp || msg.String() == "up" || msg.String() == "k" || msg.String() == "shift+tab":
+			m.selectedSoundIdx--
+			if m.selectedSoundIdx < 0 {
+				m.selectedSoundIdx = len(profiles) - 1
+			}
+		case msg.Type == tea.KeyDown || msg.String() == "down" || msg.String() == "j" || msg.Type == tea.KeyTab || msg.String() == "tab":
+			m.selectedSoundIdx++
+			if m.selectedSoundIdx >= len(profiles) {
+				m.selectedSoundIdx = 0
+			}
+		case msg.Type == tea.KeyEsc || msg.String() == "esc":
+			m.inputMode = modeNone
+		case msg.Type == tea.KeySpace || msg.String() == " ":
+			if m.notifier != nil && m.selectedSoundIdx >= 0 && m.selectedSoundIdx < len(profiles) {
+				m.notifier.PreviewSoundEvent(profiles[m.selectedSoundIdx].StartEvent)
+			}
+		case msg.Type == tea.KeyEnter || msg.String() == "enter":
+			if m.selectedSoundIdx >= 0 && m.selectedSoundIdx < len(profiles) {
+				profile := profiles[m.selectedSoundIdx]
+				m.cfg.SoundStartEvent = profile.StartEvent
+				m.cfg.SoundEndEvent = profile.EndEvent
+				if m.notifier != nil {
+					m.notifier.SetSoundEvents(profile.StartEvent, profile.EndEvent)
+				}
+				m.statusMessage = fmt.Sprintf("Sound: %s", profile.Name)
+				m.inputMode = modeNone
+				return m, m.clearStatusAfter2s()
 			}
 		}
 		return m, nil
@@ -253,6 +292,12 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("Layout: %s", m.currentLayoutName)
 			return m, m.clearStatusAfter2s()
 		}
+	case m.keymap.SoundPicker.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeSoundPicker
+			m.selectedSoundIdx = m.soundProfileIndex()
+			return m, nil
+		}
 	case m.keymap.ToggleZen.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.zenMode = !m.zenMode
@@ -298,6 +343,16 @@ func (m *Model) configureDeepFocus(d time.Duration) {
 		int(m.cfg.DeepFocusShortBreakDurationAsDuration().Minutes()),
 		int(m.cfg.DeepFocusLongBreakDurationAsDuration().Minutes()),
 	)
+}
+
+func (m *Model) soundProfileIndex() int {
+	profiles := notify.SoundProfiles()
+	for i, profile := range profiles {
+		if profile.StartEvent == m.cfg.SoundStartEvent && profile.EndEvent == m.cfg.SoundEndEvent {
+			return i
+		}
+	}
+	return 0
 }
 
 func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

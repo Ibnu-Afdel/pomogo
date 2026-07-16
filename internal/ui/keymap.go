@@ -32,6 +32,7 @@ type KeyMap struct {
 	Reset        KeyBinding
 	CycleTheme   KeyBinding
 	CycleLayout  KeyBinding
+	SoundPicker  KeyBinding
 	ToggleZen    KeyBinding
 	CycleEffects KeyBinding
 	CycleVerb    KeyBinding
@@ -53,6 +54,7 @@ func (k KeyMap) ShortHelp() []KeyBinding {
 		k.CopyStats,
 		k.CycleTheme,
 		k.CycleLayout,
+		k.SoundPicker,
 		k.ToggleZen,
 		k.CycleEffects,
 		k.CycleVerb,
@@ -76,6 +78,7 @@ var DefaultKeyMap = KeyMap{
 	Reset:        KeyBinding{Keys: []string{"r"}, Description: "Reset and clear state"},
 	CycleTheme:   KeyBinding{Keys: []string{"T"}, Description: "Cycle theme"},
 	CycleLayout:  KeyBinding{Keys: []string{"L"}, Description: "Cycle layout"},
+	SoundPicker:  KeyBinding{Keys: []string{"a"}, Description: "Choose sound profile"},
 	ToggleZen:    KeyBinding{Keys: []string{"S"}, Description: "Toggle screenshot mode"},
 	CycleEffects: KeyBinding{Keys: []string{"e"}, Description: "Cycle ambient effects"},
 	CycleVerb:    KeyBinding{Keys: []string{"v"}, Description: "Cycle activity verb"},

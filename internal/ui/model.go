@@ -32,6 +32,7 @@ const (
 	modeProjectInput
 	modeDurationPicker
 	modeCustomDurationInput
+	modeSoundPicker
 	modeRecapScreen
 )
 
@@ -67,6 +68,7 @@ type Model struct {
 	// Mode selection fields
 	selectedMode        session.Mode
 	selectedDurationIdx int
+	selectedSoundIdx    int
 	deepDuration        time.Duration
 	currentBlockID      *int64
 
@@ -138,7 +140,7 @@ func NewModel(cfg *config.Config) *Model {
 		width:               80,
 		height:              24,
 		keymap:              DefaultKeyMap,
-		notifier:            notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
+		notifier:            notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled, cfg.SoundStartEvent, cfg.SoundEndEvent),
 		stateManager:        manager,
 		dbStore:             st,
 		restorePending:      restore.CanRestore(),
@@ -198,6 +200,10 @@ func (m *Model) View() string {
 
 	if m.inputMode == modeCustomDurationInput {
 		return screens.Input(m.width, m.height, m.theme, "custom_duration", m.textInput.View(), nil, -1)
+	}
+
+	if m.inputMode == modeSoundPicker {
+		return screens.SoundPicker(m.width, m.height, m.theme, m.selectedSoundIdx, notify.SoundProfiles())
 	}
 
 	if m.inputMode != modeNone {

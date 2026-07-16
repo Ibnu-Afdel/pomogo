@@ -102,7 +102,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(titleCmd, m.tick1s())
 	}
 
-	if m.inputMode == modeDurationPicker || m.inputMode == modeCustomDurationInput {
+	if m.inputMode == modeDurationPicker || m.inputMode == modeCustomDurationInput || m.inputMode == modeSoundPicker {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			return m.handleKeypress(keyMsg)
 		}

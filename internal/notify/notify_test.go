@@ -31,6 +31,20 @@ func TestNotifyTransitionDisabled(t *testing.T) {
 	}
 }
 
+func TestSoundEvents(t *testing.T) {
+	notifier := NewNotifier(false, false, "service-login", "complete")
+	start, end := notifier.SoundEvents()
+	if start != "service-login" || end != "complete" {
+		t.Fatalf("sound events = %q/%q, want service-login/complete", start, end)
+	}
+
+	notifier.SetSoundEvents("dialog-information", "service-logout")
+	start, end = notifier.SoundEvents()
+	if start != "dialog-information" || end != "service-logout" {
+		t.Fatalf("sound events = %q/%q, want dialog-information/service-logout", start, end)
+	}
+}
+
 // TestNotifyTransitionWork tests work state notification.
 func TestNotifyTransitionWork(t *testing.T) {
 	notifier := NewNotifier(true, false)

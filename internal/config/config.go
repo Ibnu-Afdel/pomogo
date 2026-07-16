@@ -25,8 +25,10 @@ type Config struct {
 	Effects string `toml:"effects"`
 
 	// Notifications
-	NotificationsEnabled bool `toml:"notifications_enabled"`
-	SoundEnabled         bool `toml:"sound_enabled"`
+	NotificationsEnabled bool   `toml:"notifications_enabled"`
+	SoundEnabled         bool   `toml:"sound_enabled"`
+	SoundStartEvent      string `toml:"sound_start_event"`
+	SoundEndEvent        string `toml:"sound_end_event"`
 
 	// Notes
 	PromptForNotes bool `toml:"prompt_for_notes"`
@@ -92,6 +94,8 @@ func Default() *Config {
 		Effects:                 "none",
 		NotificationsEnabled:    true,
 		SoundEnabled:            true,
+		SoundStartEvent:         "message-new-instant",
+		SoundEndEvent:           "complete",
 		PromptForNotes:          true,
 		PauseOnLock:             true,
 		PauseOnSuspend:          true,
@@ -280,6 +284,8 @@ notifications_enabled = true
 
 # Enable sound on session transitions via canberra-gtk-play (default: true)
 sound_enabled = true
+sound_start_event = "message-new-instant"
+sound_end_event = "complete"
 
 # Prompt for a brief note when completing a work session (default: true)
 prompt_for_notes = true

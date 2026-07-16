@@ -351,6 +351,15 @@ func TestGlobalKeysAcrossThemesAndLayouts(t *testing.T) {
 					t.Fatal("L did not cycle layout")
 				}
 
+				_, _ = model.Update(keyRunes("a"))
+				if model.inputMode != modeSoundPicker {
+					t.Fatal("a did not open sound picker")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close sound picker")
+				}
+
 				_, _ = model.Update(keyRunes("S"))
 				if !model.zenMode {
 					t.Fatal("S did not enable zen mode")
@@ -526,6 +535,32 @@ func TestDeepFocusPickerTabEnterUsesSelectedDuration(t *testing.T) {
 	}
 	if !strings.Contains(model.statusMessage, "240 min block") {
 		t.Fatalf("status message %q does not expose selected minutes", model.statusMessage)
+	}
+}
+
+func TestSoundPickerSelectsProfile(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("a"))
+	model = updated.(*Model)
+	if model.inputMode != modeSoundPicker {
+		t.Fatalf("a did not open sound picker; input mode = %v", model.inputMode)
+	}
+
+	updated, _ = model.Update(keyTab())
+	model = updated.(*Model)
+	updated, _ = model.Update(keyEnter())
+	model = updated.(*Model)
+
+	if model.inputMode != modeNone {
+		t.Fatalf("enter did not close sound picker; input mode = %v", model.inputMode)
+	}
+	if model.cfg.SoundStartEvent != "bell" || model.cfg.SoundEndEvent != "bell" {
+		t.Fatalf("sound config = %q/%q, want bell/bell", model.cfg.SoundStartEvent, model.cfg.SoundEndEvent)
+	}
+	start, end := model.notifier.SoundEvents()
+	if start != "bell" || end != "bell" {
+		t.Fatalf("notifier sound events = %q/%q, want bell/bell", start, end)
 	}
 }
 

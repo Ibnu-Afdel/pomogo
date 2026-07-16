@@ -23,6 +23,8 @@ func TestDefaultConfig(t *testing.T) {
 		{"Theme", cfg.Theme, "tokyo-night"},
 		{"NotificationsEnabled", cfg.NotificationsEnabled, true},
 		{"SoundEnabled", cfg.SoundEnabled, true},
+		{"SoundStartEvent", cfg.SoundStartEvent, "message-new-instant"},
+		{"SoundEndEvent", cfg.SoundEndEvent, "complete"},
 		{"PromptForNotes", cfg.PromptForNotes, true},
 		{"PauseOnLock", cfg.PauseOnLock, true},
 		{"PauseOnSuspend", cfg.PauseOnSuspend, true},
@@ -254,6 +256,12 @@ func TestWriteDefault(t *testing.T) {
 	}
 	if !contains(content, "auto_advance = true") {
 		t.Errorf("Config file missing quick_focus auto_advance setting")
+	}
+	if !contains(content, "sound_start_event = \"message-new-instant\"") {
+		t.Errorf("Config file missing sound_start_event setting")
+	}
+	if !contains(content, "sound_end_event = \"complete\"") {
+		t.Errorf("Config file missing sound_end_event setting")
 	}
 	if !contains(content, "default_duration = 120") {
 		t.Errorf("Config file missing deep_focus default_duration setting")
