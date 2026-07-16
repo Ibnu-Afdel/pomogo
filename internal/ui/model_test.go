@@ -244,6 +244,81 @@ func TestSessionTracking(t *testing.T) {
 	}
 }
 
+func TestKeyboardQuitAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+				_, cmd := model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("q")}))
+				if !isQuitCmd(cmd) {
+					t.Fatalf("q did not return tea.Quit for theme=%s layout=%s", themeName, layoutName)
+				}
+			})
+		}
+	}
+}
+
+func TestKeyboardSpacePauseResumeAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+				if err := model.runner.Start(timer.RealClock{}); err != nil {
+					t.Fatalf("start failed: %v", err)
+				}
+
+				_, cmd := model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
+				if cmd != nil {
+					_ = cmd()
+				}
+				if !model.runner.Timer.IsPaused {
+					t.Fatalf("space did not pause for theme=%s layout=%s", themeName, layoutName)
+				}
+				if view := model.View(); view == "" {
+					t.Fatal("paused view is empty")
+				}
+
+				_, cmd = model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
+				if cmd != nil {
+					_ = cmd()
+				}
+				if model.runner.Timer.IsPaused {
+					t.Fatalf("second space did not resume for theme=%s layout=%s", themeName, layoutName)
+				}
+				if view := model.View(); view == "" {
+					t.Fatal("resumed view is empty")
+				}
+			})
+		}
+	}
+}
+
+func newKeyboardTestModel(t *testing.T, themeName, layoutName string) *Model {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	cfg := config.Default()
+	cfg.Theme = themeName
+	cfg.Layout = layoutName
+	model := NewModel(cfg)
+	model.width = 120
+	model.height = 32
+	model.restorePending = false
+	model.currentThemeName = themeName
+	model.theme = theme.Get(themeName)
+	model.currentLayoutName = layoutName
+	return model
+}
+
+func isQuitCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
 func TestThemeLoading(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)

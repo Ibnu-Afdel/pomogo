@@ -12,6 +12,9 @@ func (kb KeyBinding) Matches(msgStr string) bool {
 		if msgStr == k {
 			return true
 		}
+		if k == "space" && msgStr == " " {
+			return true
+		}
 	}
 	return false
 }

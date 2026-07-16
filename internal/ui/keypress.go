@@ -102,18 +102,6 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Idle state mode switches
 	if !m.runner.Timer.IsRunning && !m.runner.Timer.IsPaused {
 		switch msg.String() {
-		case "q":
-			block := session.NewQuickBlock(
-				m.cfg.QuickFocusWorkDurationAsDuration(),
-				m.cfg.QuickFocusShortBreakDurationAsDuration(),
-				m.cfg.QuickFocusLongBreakDurationAsDuration(),
-				m.cfg.QuickFocusSessionsBeforeLongBreak(),
-				m.cfg.QuickFocusAutoAdvance(),
-			)
-			m.runner = session.NewRunner(block)
-			m.selectedMode = session.ModeQuick
-			m.statusMessage = "quick focus mode selected"
-			return m, m.clearStatusAfter2s()
 		case "d":
 			m.inputMode = modeDurationPicker
 			m.selectedDurationIdx = 0
