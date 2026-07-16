@@ -16,6 +16,7 @@ builds:
     # Build for Linux only (Wayland-first design)
     goos:
       - linux
+      - darwin
     
     goarch:
       - amd64
@@ -45,8 +46,8 @@ archives:
         dst: docs/
       - src: README.md
         dst: README.md
-      - src: PIPELINE.md
-        dst: PIPELINE.md
+      - src: PIPELINE-V2.md
+        dst: PIPELINE-V2.md
     
     format_overrides:
       - goos: windows

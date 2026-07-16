@@ -3,6 +3,12 @@ package theme
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Color represents a hex color value.
@@ -10,23 +16,35 @@ type Color string
 
 // Theme represents a complete color scheme for the TUI.
 type Theme struct {
-	Name        string
-	Work        Color // Primary color for work sessions
-	Break       Color // Primary color for breaks
-	LongBreak   Color // Primary color for long breaks
-	Idle        Color // Color for idle state
-	Accent      Color // Accent color for highlights
-	Background  Color // Background color
-	Text        Color // Text/foreground color
-	Muted       Color // Muted/secondary text
-	Description string
+	Name          string
+	Work          Color // Primary color for work sessions
+	Break         Color // Primary color for breaks
+	LongBreak     Color // Primary color for long breaks
+	Idle          Color // Color for idle state
+	Accent        Color // Accent color for highlights
+	Background    Color // Background color
+	Text          Color // Text/foreground color
+	Muted         Color // Muted/secondary text
+	Subtle        Color // Subtle background/box colors
+	Border        Color // Border colors
+	ProgressFill  Color // Filled progress bar color
+	ProgressTrack Color // Progress bar track color
+	Ambient       Color // Very muted color for backgrounds/effects
+	Description   string
 }
 
 // Registry maps theme names to Theme instances.
 var Registry = map[string]*Theme{
-	"tokyo-night": TokyoNight(),
-	"catppuccin":  Catppuccin(),
-	"gruvbox":     Gruvbox(),
+	"tokyo-night":      TokyoNight(),
+	"catppuccin":       CatppuccinMocha(),
+	"catppuccin-latte": CatppuccinLatte(),
+	"gruvbox":          Gruvbox(),
+	"rose-pine":        RosePine(),
+	"everforest":       Everforest(),
+	"nord":             Nord(),
+	"dracula":          Dracula(),
+	"kanagawa":         Kanagawa(),
+	"carbon":           Carbon(),
 }
 
 // Get retrieves a theme by name. Returns default (Tokyo Night) if not found.
@@ -34,7 +52,6 @@ func Get(name string) *Theme {
 	if theme, exists := Registry[name]; exists {
 		return theme
 	}
-	// Default to Tokyo Night
 	return TokyoNight()
 }
 
@@ -47,61 +64,13 @@ func List() []string {
 	return names
 }
 
-// TokyoNight returns the Tokyo Night theme (default).
-// Dark, moody, with vibrant accents inspired by Tokyo's nightlife.
-func TokyoNight() *Theme {
-	return &Theme{
-		Name:        "tokyo-night",
-		Work:        "#ff7a93", // Coral red
-		Break:       "#7aa2f7", // Sky blue
-		LongBreak:   "#9ece6a", // Spring green
-		Idle:        "#565f89", // Charcoal blue
-		Accent:      "#bb9af7", // Purple
-		Background:  "#1a1b26", // Deep navy
-		Text:        "#c0caf5", // Light blue-gray
-		Muted:       "#565f89", // Muted blue-gray
-		Description: "Dark theme inspired by Tokyo's neon-lit nights. Default theme.",
-	}
-}
-
-// Catppuccin returns the Catppuccin (Latte) theme.
-// Light, pastel-friendly theme inspired by the Catppuccin color palette.
-func Catppuccin() *Theme {
-	return &Theme{
-		Name:        "catppuccin",
-		Work:        "#d20f39", // Flamingo red
-		Break:       "#1e66f5", // Sapphire blue
-		LongBreak:   "#40a02b", // Green
-		Idle:        "#9ca0b0", // Overlay gray
-		Accent:      "#8839ef", // Mauve purple
-		Background:  "#fffdf5", // Latte cream
-		Text:        "#4c4f69", // Dark text
-		Muted:       "#9ca0b0", // Muted text
-		Description: "Light, pastel theme from the Catppuccin palette. Great for daytime.",
-	}
-}
-
-// Gruvbox returns the Gruvbox (Dark) theme.
-// Warm, earthy theme with good contrast inspired by Gruvbox.
-func Gruvbox() *Theme {
-	return &Theme{
-		Name:        "gruvbox",
-		Work:        "#fb4934", // Bright red
-		Break:       "#83a598", // Aqua/teal
-		LongBreak:   "#b8bb26", // Lime green
-		Idle:        "#928374", // Gray
-		Accent:      "#d3869b", // Purple/mauve
-		Background:  "#282828", // Dark background
-		Text:        "#ebdbb2", // Light beige
-		Muted:       "#928374", // Muted gray
-		Description: "Warm, earthy theme with strong contrast. Good for extended use.",
-	}
-}
-
 // Validate checks if a theme name is valid.
 func Validate(name string) error {
+	if name == "random" || name == "daily" {
+		return nil
+	}
 	if _, exists := Registry[name]; !exists {
-		return fmt.Errorf("unknown theme: %q (available: tokyo-night, catppuccin, gruvbox)", name)
+		return fmt.Errorf("unknown theme: %q", name)
 	}
 	return nil
 }
@@ -111,42 +80,352 @@ func (c Color) String() string {
 	return string(c)
 }
 
-// ANSI256 returns the closest ANSI 256-color approximation for the hex color.
-// This is a simplified mapping; a full implementation would use color distance algorithms.
-func (c Color) ANSI256() int {
-	// Map common theme colors to ANSI 256 palette
-	// For simplicity, using a subset of colors
-	hexToANSI := map[string]int{
-		// Tokyo Night
-		"#ff7a93": 203, // bright red
-		"#7aa2f7": 75,  // bright blue
-		"#9ece6a": 149, // green
-		"#565f89": 60,  // blue-gray
-		"#bb9af7": 141, // purple
-		"#1a1b26": 235, // very dark gray
-		"#c0caf5": 189, // light blue-gray
-		// Catppuccin
-		"#d20f39": 167, // red
-		"#1e66f5": 33,  // blue
-		"#40a02b": 35,  // green
-		"#9ca0b0": 145, // gray
-		"#8839ef": 135, // purple
-		"#fffdf5": 15,  // white
-		"#4c4f69": 59,  // dark gray
-		// Gruvbox
-		"#fb4934": 208, // bright red
-		"#83a598": 108, // aqua
-		"#b8bb26": 106, // lime
-		"#928374": 102, // gray
-		"#d3869b": 168, // mauve
-		"#282828": 235, // very dark gray
-		"#ebdbb2": 223, // beige
+// TokyoNight returns the Tokyo Night theme (default).
+func TokyoNight() *Theme {
+	return &Theme{
+		Name:          "tokyo-night",
+		Work:          "#f7768e",
+		Break:         "#7aa2f7",
+		LongBreak:     "#9ece6a",
+		Idle:          "#565f89",
+		Accent:        "#bb9af7",
+		Background:    "#1a1b26",
+		Text:          "#c0caf5",
+		Muted:         "#565f89",
+		Subtle:        "#414868",
+		Border:        "#3b4261",
+		ProgressFill:  "#bb9af7",
+		ProgressTrack: "#24283b",
+		Ambient:       "#1f2335",
+		Description:   "Dark theme inspired by Tokyo's neon-lit nights.",
+	}
+}
+
+// CatppuccinMocha returns the Catppuccin Mocha theme.
+func CatppuccinMocha() *Theme {
+	return &Theme{
+		Name:          "catppuccin",
+		Work:          "#f38ba8",
+		Break:         "#89b4fa",
+		LongBreak:     "#a6e3a1",
+		Idle:          "#585b70",
+		Accent:        "#cba6f7",
+		Background:    "#1e1e2e",
+		Text:          "#cdd6f4",
+		Muted:         "#7f849c",
+		Subtle:        "#313244",
+		Border:        "#45475a",
+		ProgressFill:  "#f38ba8",
+		ProgressTrack: "#181825",
+		Ambient:       "#11111b",
+		Description:   "Dark, warm pastel theme from the Catppuccin palette.",
+	}
+}
+
+// CatppuccinLatte returns the Catppuccin Latte theme.
+func CatppuccinLatte() *Theme {
+	return &Theme{
+		Name:          "catppuccin-latte",
+		Work:          "#d20f39",
+		Break:         "#1e66f5",
+		LongBreak:     "#40a02b",
+		Idle:          "#9ca0b0",
+		Accent:        "#8839ef",
+		Background:    "#eff1f5",
+		Text:          "#4c4f69",
+		Muted:         "#7c7f93",
+		Subtle:        "#ccd0da",
+		Border:        "#acb0be",
+		ProgressFill:  "#d20f39",
+		ProgressTrack: "#e6e9ef",
+		Ambient:       "#ccd0da",
+		Description:   "Light pastel theme from the Catppuccin palette.",
+	}
+}
+
+// Gruvbox returns the Gruvbox (Dark) theme.
+func Gruvbox() *Theme {
+	return &Theme{
+		Name:          "gruvbox",
+		Work:          "#fb4934",
+		Break:         "#83a598",
+		LongBreak:     "#b8bb26",
+		Idle:          "#928374",
+		Accent:        "#fe8019",
+		Background:    "#282828",
+		Text:          "#ebdbb2",
+		Muted:         "#a89984",
+		Subtle:        "#3c3836",
+		Border:        "#504945",
+		ProgressFill:  "#fb4934",
+		ProgressTrack: "#1d2021",
+		Ambient:       "#1d2021",
+		Description:   "Warm, earthy retro theme with strong contrast.",
+	}
+}
+
+// RosePine returns the Rose Pine theme.
+func RosePine() *Theme {
+	return &Theme{
+		Name:          "rose-pine",
+		Work:          "#ebbcba",
+		Break:         "#31748f",
+		LongBreak:     "#9ccfd8",
+		Idle:          "#6e6a86",
+		Accent:        "#c4a7e7",
+		Background:    "#191724",
+		Text:          "#e0def4",
+		Muted:         "#908caa",
+		Subtle:        "#26233a",
+		Border:        "#403d52",
+		ProgressFill:  "#ebbcba",
+		ProgressTrack: "#212030",
+		Ambient:       "#2a2837",
+		Description:   "All natural pine, foam, and rose colors.",
+	}
+}
+
+// Everforest returns the Everforest theme.
+func Everforest() *Theme {
+	return &Theme{
+		Name:          "everforest",
+		Work:          "#e67e80",
+		Break:         "#7fbbb3",
+		LongBreak:     "#a7c080",
+		Idle:          "#859289",
+		Accent:        "#dbbc7f",
+		Background:    "#2d353b",
+		Text:          "#d3c6aa",
+		Muted:         "#9da9a0",
+		Subtle:        "#343f44",
+		Border:        "#475258",
+		ProgressFill:  "#a7c080",
+		ProgressTrack: "#232a2e",
+		Ambient:       "#232a2e",
+		Description:   "Warm, comforting forest green palette.",
+	}
+}
+
+// Nord returns the Nord theme.
+func Nord() *Theme {
+	return &Theme{
+		Name:          "nord",
+		Work:          "#bf616a",
+		Break:         "#88c0d0",
+		LongBreak:     "#a3be8c",
+		Idle:          "#4c566a",
+		Accent:        "#81a1c1",
+		Background:    "#2e3440",
+		Text:          "#d8dee9",
+		Muted:         "#4c566a",
+		Subtle:        "#3b4252",
+		Border:        "#434c5e",
+		ProgressFill:  "#88c0d0",
+		ProgressTrack: "#2e3440",
+		Ambient:       "#3b4252",
+		Description:   "Arctic, ice-cold color scheme.",
+	}
+}
+
+// Dracula returns the Dracula theme.
+func Dracula() *Theme {
+	return &Theme{
+		Name:          "dracula",
+		Work:          "#ff5555",
+		Break:         "#8be9fd",
+		LongBreak:     "#50fa7b",
+		Idle:          "#6272a4",
+		Accent:        "#bd93f9",
+		Background:    "#282a36",
+		Text:          "#f8f8f2",
+		Muted:         "#6272a4",
+		Subtle:        "#343746",
+		Border:        "#44475a",
+		ProgressFill:  "#bd93f9",
+		ProgressTrack: "#191a21",
+		Ambient:       "#191a21",
+		Description:   "Classic, high-contrast dark theme for vampires.",
+	}
+}
+
+// Kanagawa returns the Kanagawa theme.
+func Kanagawa() *Theme {
+	return &Theme{
+		Name:          "kanagawa",
+		Work:          "#c3404b",
+		Break:         "#7e9cd8",
+		LongBreak:     "#76946a",
+		Idle:          "#727169",
+		Accent:        "#957fb8",
+		Background:    "#1f1f28",
+		Text:          "#dcd7ba",
+		Muted:         "#727169",
+		Subtle:        "#2a2a37",
+		Border:        "#363646",
+		ProgressFill:  "#957fb8",
+		ProgressTrack: "#16161d",
+		Ambient:       "#16161d",
+		Description:   "Edo-era artistic theme inspired by the Great Wave.",
+	}
+}
+
+// Carbon returns the Carbon theme.
+func Carbon() *Theme {
+	return &Theme{
+		Name:          "carbon",
+		Work:          "#fa4d56",
+		Break:         "#4589ff",
+		LongBreak:     "#24a148",
+		Idle:          "#525252",
+		Accent:        "#a861ea",
+		Background:    "#161616",
+		Text:          "#f4f4f4",
+		Muted:         "#707070",
+		Subtle:        "#262626",
+		Border:        "#393939",
+		ProgressFill:  "#f4f4f4",
+		ProgressTrack: "#161616",
+		Ambient:       "#262626",
+		Description:   "Monochrome, high-contrast gray scheme.",
+	}
+}
+
+// ExternalTheme represents the TOML representation of an external theme file.
+type ExternalTheme struct {
+	Name          string `toml:"name"`
+	Work          string `toml:"work"`
+	Break         string `toml:"break"`
+	LongBreak     string `toml:"long-break"`
+	Idle          string `toml:"idle"`
+	Accent        string `toml:"accent"`
+	Background    string `toml:"background"`
+	Text          string `toml:"text"`
+	Muted         string `toml:"muted"`
+	Subtle        string `toml:"subtle"`
+	Border        string `toml:"border"`
+	ProgressFill  string `toml:"progress-fill"`
+	ProgressTrack string `toml:"progress-track"`
+	Ambient       string `toml:"ambient"`
+	Description   string `toml:"description"`
+}
+
+// ToTheme converts ExternalTheme to Theme.
+func (et *ExternalTheme) ToTheme() *Theme {
+	return &Theme{
+		Name:          et.Name,
+		Work:          Color(et.Work),
+		Break:         Color(et.Break),
+		LongBreak:     Color(et.LongBreak),
+		Idle:          Color(et.Idle),
+		Accent:        Color(et.Accent),
+		Background:    Color(et.Background),
+		Text:          Color(et.Text),
+		Muted:         Color(et.Muted),
+		Subtle:        Color(et.Subtle),
+		Border:        Color(et.Border),
+		ProgressFill:  Color(et.ProgressFill),
+		ProgressTrack: Color(et.ProgressTrack),
+		Ambient:       Color(et.Ambient),
+		Description:   et.Description,
+	}
+}
+
+// LoadExternalThemes scans for external themes and registers them.
+func LoadExternalThemes() error {
+	themesDir := filepath.Join(xdgConfigDir(), "themes")
+	if _, err := os.Stat(themesDir); os.IsNotExist(err) {
+		return nil
 	}
 
-	if code, exists := hexToANSI[string(c)]; exists {
-		return code
+	files, err := filepath.Glob(filepath.Join(themesDir, "*.toml"))
+	if err != nil {
+		return err
 	}
 
-	// Default to 255 (white) if color not found
-	return 255
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var et ExternalTheme
+		if err := toml.Unmarshal(data, &et); err != nil {
+			continue
+		}
+		if et.Name == "" {
+			stem := filepath.Base(file)
+			stem = strings.TrimSuffix(stem, filepath.Ext(stem))
+			et.Name = stem
+		}
+		Registry[et.Name] = et.ToTheme()
+	}
+	return nil
+}
+
+// CheckExternalThemes returns a list of filenames for malformed themes.
+func CheckExternalThemes() []string {
+	var malformed []string
+	themesDir := filepath.Join(xdgConfigDir(), "themes")
+	if _, err := os.Stat(themesDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	files, err := filepath.Glob(filepath.Join(themesDir, "*.toml"))
+	if err != nil {
+		return nil
+	}
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var et ExternalTheme
+		if err := toml.Unmarshal(data, &et); err != nil {
+			malformed = append(malformed, filepath.Base(file))
+		}
+	}
+	return malformed
+}
+
+func xdgConfigDir() string {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		configHome = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(configHome, "pomogo")
+}
+
+// ResolveThemeName returns a concrete theme name, resolving "random" and "daily".
+func ResolveThemeName(configured string) string {
+	if configured == "random" {
+		themes := List()
+		if len(themes) == 0 {
+			return "tokyo-night"
+		}
+		importTimeSeed := time.Now().UnixNano() + int64(os.Getpid())
+		idx := int(importTimeSeed % int64(len(themes)))
+		if idx < 0 {
+			idx = -idx
+		}
+		return themes[idx]
+	}
+
+	if configured == "daily" {
+		dateStr := time.Now().Format("2006-01-02")
+		var hash int64
+		for _, c := range dateStr {
+			hash = hash*31 + int64(c)
+		}
+		themes := List()
+		if len(themes) == 0 {
+			return "tokyo-night"
+		}
+		idx := int(hash % int64(len(themes)))
+		if idx < 0 {
+			idx = -idx
+		}
+		return themes[idx]
+	}
+
+	return configured
 }

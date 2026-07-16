@@ -16,7 +16,9 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
+	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Build-time variables injected via -ldflags.
@@ -41,6 +43,10 @@ func main() {
 		handleStats()
 	case "history":
 		handleHistory()
+	case "themes":
+		handleThemes()
+	case "recap":
+		handleRecap()
 	case "status":
 		handleStatus()
 	case "completion":
@@ -116,6 +122,8 @@ func handleHelp() {
 	fmt.Println("  config init        Create a default config file")
 	fmt.Println("  stats              Show focus statistics")
 	fmt.Println("  history            Show detailed session history")
+	fmt.Println("  themes             List all available color themes with swatches")
+	fmt.Println("  recap              Show summary of the last completed block")
 	fmt.Println("  status             Show current session status")
 	fmt.Println("  completion         Generate shell completion scripts")
 	fmt.Println("  projects           Manage focus projects")
@@ -159,19 +167,23 @@ func handleStats() {
 	s := stats.Calculate(sessions, now)
 
 	if *weekFlag {
-		fmt.Println("Weekly Focus Activity:")
-		fmt.Println("----------------------")
+		fmt.Println("Weekly Focus Activity (mins):")
+		fmt.Println("-----------------------------")
 		for _, wd := range s.WeekDays {
+			barLen := wd.Minutes / 10
+			if barLen > 15 {
+				barLen = 15
+			}
 			bar := ""
-			if wd.Count > 0 {
-				bar = strings.Repeat("█", wd.Count)
+			if barLen > 0 {
+				bar = strings.Repeat("█", barLen)
 			} else {
 				bar = "░"
 			}
-			fmt.Printf("%s  %-10s %d\n", wd.Date.Format("Mon"), bar, wd.Count)
+			fmt.Printf("%s  %-15s %dm\n", wd.Date.Format("Mon"), bar, wd.Minutes)
 		}
 		fmt.Println()
-		fmt.Printf("Total Week Completed: %d sessions\n", s.WeekCount)
+		fmt.Printf("Total Week Completed: %d sessions (%d mins)\n", s.WeekCount, s.WeekMinutes)
 		return
 	}
 
@@ -185,10 +197,11 @@ func handleStats() {
 
 	fmt.Println("PomoGo Focus Statistics:")
 	fmt.Println("------------------------")
-	fmt.Printf("Today Completed:   %d sessions (%d mins focused)\n", s.TodayCount, s.TodayMinutes)
-	fmt.Printf("Current Streak:    %d days\n", s.CurrentStreak)
-	fmt.Printf("Best Streak:       %d days\n", s.BestStreak)
-	fmt.Printf("Monthly Completed: %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
+	fmt.Printf("Today Completed:    %d sessions (%d mins focused)\n", s.TodayCount, s.TodayMinutes)
+	fmt.Printf("Current Streak:     %d days\n", s.CurrentStreak)
+	fmt.Printf("Best Streak:        %d days\n", s.BestStreak)
+	fmt.Printf("Monthly Completed:  %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
+	fmt.Printf("Lifetime Completed: %d sessions (%dh %dm focused)\n", s.LifetimeSessions, s.LifetimeMinutes/60, s.LifetimeMinutes%60)
 }
 
 func handleHistory() {
@@ -239,6 +252,71 @@ func handleHistory() {
 	if count == 0 {
 		fmt.Println("No work sessions recorded yet.")
 	}
+}
+
+func handleThemes() {
+	_ = theme.LoadExternalThemes()
+	themes := theme.List()
+	fmt.Println("Available Color Themes:")
+	fmt.Println("-----------------------")
+	for _, name := range themes {
+		t := theme.Get(name)
+		swatchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Work.String()))
+		swatch := swatchStyle.Render("■ Work")
+
+		breakStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Break.String()))
+		brk := breakStyle.Render("■ Break")
+
+		accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent.String()))
+		acc := accentStyle.Render("■ Accent")
+
+		fmt.Printf("  %-16s %s  %s  %s  - %s\n", t.Name, swatch, brk, acc, t.Description)
+	}
+}
+
+func handleRecap() {
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	b, err := st.GetLastBlock()
+	if err != nil {
+		fmt.Println("No completed blocks found.")
+		return
+	}
+
+	modeStr := "Quick Focus"
+	if b.Mode == "deep" {
+		modeStr = "Deep Focus"
+	}
+
+	hrs := b.PlannedSecs / 3600
+	mins := (b.PlannedSecs % 3600) / 60
+	secs := b.PlannedSecs % 60
+	var timeStr string
+	if hrs > 0 {
+		timeStr = fmt.Sprintf("%dh %dm", hrs, mins)
+	} else if mins > 0 {
+		timeStr = fmt.Sprintf("%dm %ds", mins, secs)
+	} else {
+		timeStr = fmt.Sprintf("%ds", secs)
+	}
+
+	statusStr := "Completed"
+	if !b.Completed {
+		statusStr = "Abandoned"
+	}
+
+	fmt.Println("Last Focus Cycle Recap:")
+	fmt.Println("-----------------------")
+	fmt.Printf("  Mode:            %s\n", modeStr)
+	fmt.Printf("  Status:          %s\n", statusStr)
+	fmt.Printf("  Started At:      %s\n", b.StartedAt.Local().Format("2006-01-02 15:04"))
+	fmt.Printf("  Planned Time:    %s\n", timeStr)
+	fmt.Printf("  Pauses Taken:    %d\n", b.Pauses)
 }
 
 func handleStatus() {
@@ -400,15 +478,24 @@ func handleProjects() {
 		listProjects(st)
 	case "add":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: pomogo projects add <name> [color]")
+			fmt.Println("Usage: pomogo projects add <name> [--icon <icon>] [color]")
 			os.Exit(1)
 		}
 		name := os.Args[3]
+		icon := ""
 		color := ""
-		if len(os.Args) >= 5 {
-			color = os.Args[4]
+
+		args := os.Args[4:]
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--icon" && i+1 < len(args) {
+				icon = args[i+1]
+				i++
+			} else if color == "" {
+				color = args[i]
+			}
 		}
-		p := &store.Project{Name: name, Color: color}
+
+		p := &store.Project{Name: name, Color: color, Icon: icon}
 		if err := st.CreateProject(p); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -450,10 +537,16 @@ func listProjects(st *store.Store) {
 		if p.Color != "" {
 			colorSuffix = fmt.Sprintf(" (%s)", p.Color)
 		}
+
+		displayName := p.Name
+		if p.Icon != "" {
+			displayName = p.Icon + " " + p.Name
+		}
+
 		if p.Archived {
-			archived = append(archived, p.Name+colorSuffix)
+			archived = append(archived, displayName+colorSuffix)
 		} else {
-			active = append(active, p.Name+colorSuffix)
+			active = append(active, displayName+colorSuffix)
 		}
 	}
 

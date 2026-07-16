@@ -117,6 +117,18 @@ func TestValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "Invalid layout",
+			cfg: &Config{
+				WorkDuration:            25,
+				ShortBreakDuration:      5,
+				LongBreakDuration:       15,
+				SessionsBeforeLongBreak: 4,
+				Theme:                   "tokyo-night",
+				Layout:                  "invalid-layout",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -397,5 +409,79 @@ func TestResolveProfile(t *testing.T) {
 	}
 	if soundEventNon != "" {
 		t.Errorf("expected empty sound event")
+	}
+}
+
+func TestModeSpecificConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := XDGConfigDir()
+	os.MkdirAll(configDir, 0755)
+	configFile := ConfigFilePath()
+
+	// 1. Test explicit configuration overriding top level
+	content := `
+work_duration = 25
+short_break_duration = 5
+theme = "gruvbox"
+
+[quick_focus]
+work_duration = 30
+short_break_duration = 6
+long_break_duration = 12
+
+[deep_focus]
+work_duration = 90
+short_break_duration = 10
+`
+	os.WriteFile(configFile, []byte(content), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.QuickFocusWorkDurationAsDuration() != 30*time.Minute {
+		t.Errorf("got QuickFocusWorkDuration %v, want 30m", cfg.QuickFocusWorkDurationAsDuration())
+	}
+	if cfg.QuickFocusShortBreakDurationAsDuration() != 6*time.Minute {
+		t.Errorf("got QuickFocusShortBreakDuration %v, want 6m", cfg.QuickFocusShortBreakDurationAsDuration())
+	}
+	if cfg.QuickFocusLongBreakDurationAsDuration() != 12*time.Minute {
+		t.Errorf("got QuickFocusLongBreakDuration %v, want 12m", cfg.QuickFocusLongBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusWorkDurationAsDuration() != 90*time.Minute {
+		t.Errorf("got DeepFocusWorkDuration %v, want 90m", cfg.DeepFocusWorkDurationAsDuration())
+	}
+	if cfg.DeepFocusShortBreakDurationAsDuration() != 10*time.Minute {
+		t.Errorf("got DeepFocusShortBreakDuration %v, want 10m", cfg.DeepFocusShortBreakDurationAsDuration())
+	}
+
+	// 2. Test fallbacks
+	contentFallback := `
+work_duration = 20
+short_break_duration = 4
+long_break_duration = 10
+sessions_before_long_break = 5
+`
+	os.WriteFile(configFile, []byte(contentFallback), 0644)
+
+	cfgFallback, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfgFallback.QuickFocusWorkDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got QuickFocusWorkDuration %v, want 20m fallback", cfgFallback.QuickFocusWorkDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusWorkDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got DeepFocusWorkDuration %v, want 20m fallback", cfgFallback.DeepFocusWorkDurationAsDuration())
+	}
+	if cfgFallback.QuickFocusSessionsBeforeLongBreak() != 5 {
+		t.Errorf("got SessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.QuickFocusSessionsBeforeLongBreak())
 	}
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
+	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	"github.com/Ibnu-Afdel/pomogo/internal/ui/screens"
 )
 
 func TestNewModel(t *testing.T) {
@@ -23,8 +28,8 @@ func TestNewModel(t *testing.T) {
 	if model.cfg != cfg {
 		t.Error("Config not set correctly")
 	}
-	if model.session == nil {
-		t.Fatal("Session not initialized")
+	if model.runner == nil {
+		t.Fatal("Runner not initialized")
 	}
 	if model.theme == nil {
 		t.Fatal("Theme not initialized")
@@ -83,6 +88,113 @@ func TestViewTinyTerminal(t *testing.T) {
 	}
 }
 
+func TestGoldenClassicRender(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.currentProjectName = "TestProject"
+	model.currentTask = "TestTask"
+
+	// Run the render
+	ds := model.displayState()
+	f := render.Frame{Width: 80, Height: 24}
+	got := render.Classic(ds, model.theme, f)
+
+	goldenPath := "testdata/classic.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+	} else if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenPath, []byte(got), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden file: %v", err)
+		}
+		t.Log("Created golden file")
+		return
+	}
+
+	wantBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("failed to read golden file: %v", err)
+	}
+	want := string(wantBytes)
+
+	if got != want {
+		t.Errorf("rendered output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenPath, got, want)
+	}
+}
+
+func TestGoldenDeepClassicRender(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.currentProjectName = "DeepProject"
+	model.currentTask = "DeepTask"
+
+	// Select Deep Focus
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+	model.runner = session.NewRunner(block)
+	model.selectedMode = session.ModeDeep
+	
+	// Start the runner so it is running Work
+	_ = model.runner.Start(timer.RealClock{})
+
+	// 1. Test Work Golden
+	dsWork := model.displayState()
+	f := render.Frame{Width: 80, Height: 24}
+	gotWork := render.Classic(dsWork, model.theme, f)
+
+	goldenWorkPath := "testdata/deep_work.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenWorkPath, []byte(gotWork), 0644)
+	} else if _, err := os.Stat(goldenWorkPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenWorkPath, []byte(gotWork), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden work file: %v", err)
+		}
+	} else {
+		wantBytes, err := os.ReadFile(goldenWorkPath)
+		if err != nil {
+			t.Fatalf("failed to read golden work file: %v", err)
+		}
+		want := string(wantBytes)
+		if gotWork != want {
+			t.Errorf("Deep work output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenWorkPath, gotWork, want)
+		}
+	}
+
+	// 2. Skip to break segment
+	_, _ = model.runner.Skip(timer.RealClock{})
+	dsBreak := model.displayState()
+	gotBreak := render.Classic(dsBreak, model.theme, f)
+
+	goldenBreakPath := "testdata/deep_break.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenBreakPath, []byte(gotBreak), 0644)
+	} else if _, err := os.Stat(goldenBreakPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenBreakPath, []byte(gotBreak), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden break file: %v", err)
+		}
+	} else {
+		wantBytes, err := os.ReadFile(goldenBreakPath)
+		if err != nil {
+			t.Fatalf("failed to read golden break file: %v", err)
+		}
+		want := string(wantBytes)
+		if gotBreak != want {
+			t.Errorf("Deep break output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenBreakPath, gotBreak, want)
+		}
+	}
+}
+
 func TestGetDurationForPhase(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -97,7 +209,7 @@ func TestGetDurationForPhase(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		model.session.Phase = tt.phase
+		model.runner.Block.CurrentSegment.Duration = tt.expected
 		got := model.getDurationForPhase()
 		if got != tt.expected {
 			t.Errorf("getDurationForPhase(%v) = %v, want %v", tt.phase, got, tt.expected)
@@ -125,7 +237,7 @@ func TestSessionTracking(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
 
-	if model.session.IsRunning {
+	if model.runner.Timer.IsRunning {
 		t.Error("Session should not be running initially")
 	}
 }
@@ -152,7 +264,7 @@ func TestMultipleModels(t *testing.T) {
 	if m1 == m2 {
 		t.Error("Each NewModel should create a new instance")
 	}
-	if m1.session == m2.session {
+	if m1.runner.Timer == m2.runner.Timer {
 		t.Error("Each model should have its own session")
 	}
 }
@@ -162,30 +274,30 @@ func TestPhaseLabel(t *testing.T) {
 	model := NewModel(cfg)
 
 	// Idle state
-	label := phaseLabel(model.session)
+	label := phaseLabel(model.runner.Timer)
 	if label != "Focus Timer" {
 		t.Errorf("idle label = %q, want %q", label, "Focus Timer")
 	}
 
 	// Start a work session
-	_ = model.session.Start(timer.RealClock{})
-	label = phaseLabel(model.session)
+	_ = model.runner.Timer.Start(timer.RealClock{})
+	label = phaseLabel(model.runner.Timer)
 	if label != "Work" {
 		t.Errorf("work label = %q, want %q", label, "Work")
 	}
 
 	// Skip to short break
-	model.session.Skip()
-	label = phaseLabel(model.session)
+	model.runner.Timer.Skip()
+	label = phaseLabel(model.runner.Timer)
 	if label != "Short Break" {
 		t.Errorf("short break label = %q, want %q", label, "Short Break")
 	}
 }
 
 func TestBigClockRows(t *testing.T) {
-	rows := bigClockRows("00:00", lipgloss.Color("#ff0000"))
+	rows := render.BigClockRows("00:00", lipgloss.Color("#ff0000"))
 	if len(rows) != 5 {
-		t.Errorf("bigClockRows returned %d rows, want 5", len(rows))
+		t.Errorf("BigClockRows returned %d rows, want 5", len(rows))
 	}
 	for i, row := range rows {
 		if row == "" {
@@ -195,28 +307,28 @@ func TestBigClockRows(t *testing.T) {
 }
 
 func TestProgressBar(t *testing.T) {
-	bar := progressBar(0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	bar := render.ProgressBar(0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if bar == "" {
-		t.Error("progressBar returned empty string")
+		t.Error("ProgressBar returned empty string")
 	}
 
 	// Test edge cases
-	_ = progressBar(0.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(1.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(1.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(-0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(0.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(1.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(1.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(-0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 }
 
 func TestSessionDots(t *testing.T) {
-	dots := sessionDots(2, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	dots := render.SessionDots(2, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if dots == "" {
-		t.Error("sessionDots returned empty string")
+		t.Error("SessionDots returned empty string")
 	}
 
 	// Test zero completed
-	dots = sessionDots(0, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	dots = render.SessionDots(0, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if dots == "" {
-		t.Error("sessionDots returned empty string for 0 completed")
+		t.Error("SessionDots returned empty string for 0 completed")
 	}
 }
 
@@ -422,5 +534,196 @@ func TestSuggestionsAndNavigation(t *testing.T) {
 	}
 	if model.suggestionIndex != -1 {
 		t.Errorf("expected suggestionIndex reset to -1, got %d", model.suggestionIndex)
+	}
+}
+
+func TestCombinationSweepNoPanics(t *testing.T) {
+	cfg := config.Default()
+	themes := []string{
+		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
+		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
+	}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+	sizes := []struct{ w, h int }{
+		{60, 18},
+		{200, 50},
+	}
+
+	for _, themeName := range themes {
+		for _, layoutName := range layouts {
+			for _, sz := range sizes {
+				model := NewModel(cfg)
+				model.width = sz.w
+				model.height = sz.h
+				model.currentThemeName = themeName
+				model.theme = theme.Get(themeName)
+				model.currentLayoutName = layoutName
+
+				// Test Quick Focus Running
+				_ = model.runner.Start(timer.RealClock{})
+				view := model.View()
+				if view == "" {
+					t.Errorf("empty render for theme %s, layout %s at %dx%d", themeName, layoutName, sz.w, sz.h)
+				}
+
+				// Test Deep Focus Running
+				blockD := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+				model.runner = session.NewRunner(blockD)
+				model.selectedMode = session.ModeDeep
+				_ = model.runner.Start(timer.RealClock{})
+				viewD := model.View()
+				if viewD == "" {
+					t.Errorf("empty render (deep) for theme %s, layout %s at %dx%d", themeName, layoutName, sz.w, sz.h)
+				}
+			}
+		}
+	}
+}
+
+func TestGoldenLayouts(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"minimal", "centered", "compact", "retro"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Prj"
+			model.currentTask = "Tsk"
+
+			// Idle state
+			dsIdle := model.displayState()
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			gotIdle := layoutFunc(dsIdle, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_idle.golden", gotIdle)
+
+			// Running work state
+			_ = model.runner.Start(timer.RealClock{})
+			dsRun := model.displayState()
+			gotRun := layoutFunc(dsRun, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_work.golden", gotRun)
+
+			// Paused state
+			_ = model.runner.Timer.Pause(timer.RealClock{})
+			dsPause := model.displayState()
+			gotPause := layoutFunc(dsPause, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_paused.golden", gotPause)
+		})
+	}
+}
+
+func verifyGolden(t *testing.T, filename string, got string) {
+	goldenPath := filepath.Join("testdata", filename)
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+		return
+	}
+	if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+		return
+	}
+	wantBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("failed to read golden: %v", err)
+	}
+	want := string(wantBytes)
+	if got != want {
+		t.Errorf("output does not match golden %s", filename)
+	}
+}
+
+func TestGoldenZenLayouts(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Prj"
+			model.currentTask = "Tsk"
+			model.zenMode = true
+
+			// Running state in Zen mode
+			_ = model.runner.Start(timer.RealClock{})
+			dsRun := model.displayState()
+			dsRun.Zen = true
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			gotRun := layoutFunc(dsRun, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_zen_work.golden", gotRun)
+		})
+	}
+}
+
+func TestRecapScreen(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.selectedMode = session.ModeQuick
+	
+	// Create mock recap info
+	info := screens.RecapInfo{
+		TotalFocused: 1*time.Hour + 30*time.Minute,
+		Segments:     3,
+		Pauses:       1,
+		Streak:       5,
+		IsDeep:       true,
+	}
+
+	got := screens.Recap(80, 24, model.theme, info)
+	verifyGolden(t, "recap.golden", got)
+}
+
+func TestVerbLabelTaskKeywords(t *testing.T) {
+	tests := []struct {
+		task string
+		want string
+	}{
+		{"build docker image", "Building"},
+		{"fix compilation error", "Fixing"},
+		{"debug session runner", "Debugging"},
+		{"read specifications", "Reading"},
+		{"write tests", "Writing"},
+		{"learn bubble tea patterns", "Learning"},
+		{"design layouts system", "Designing"},
+		{"research particle fields", "Researching"},
+		{"random coding", "Focusing"},
+	}
+
+	for _, tt := range tests {
+		got := GetVerbForTask(tt.task)
+		if got != tt.want {
+			t.Errorf("GetVerbForTask(%q) = %q, want %q", tt.task, got, tt.want)
+		}
+	}
+}
+
+func TestGoldenProjectIcon(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Fawz"
+			model.currentProjectIcon = "🐹"
+			model.currentTask = "build auth"
+			model.currentVerbLabel = "Building"
+
+			ds := model.displayState()
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			got := layoutFunc(ds, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_project_icon.golden", got)
+		})
 	}
 }

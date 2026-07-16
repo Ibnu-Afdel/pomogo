@@ -10,7 +10,4 @@ dist/
 .coverprofile
 
 # dev artifacts
-docs/
-plan.md
-PIPELINE.md
 pomogo
