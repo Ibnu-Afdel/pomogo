@@ -13,10 +13,12 @@ import (
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
 	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
+	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -45,6 +47,8 @@ func main() {
 		handleHistory()
 	case "themes":
 		handleThemes()
+	case "screenshot-preview":
+		handleScreenshotPreview()
 	case "recap":
 		handleRecap()
 	case "status":
@@ -123,6 +127,7 @@ func handleHelp() {
 	fmt.Println("  stats              Show focus statistics")
 	fmt.Println("  history            Show detailed session history")
 	fmt.Println("  themes             List all available color themes with swatches")
+	fmt.Println("  screenshot-preview Render a non-interactive terminal preview")
 	fmt.Println("  recap              Show summary of the last completed block")
 	fmt.Println("  status             Show current session status")
 	fmt.Println("  completion         Generate shell completion scripts")
@@ -232,12 +237,12 @@ func handleHistory() {
 		if !s.Completed {
 			status = "skipped"
 		}
-		
+
 		task := s.Task
 		if task == "" {
 			task = "[no task]"
 		}
-		
+
 		timeStr := s.StartedAt.Local().Format("2006-01-02 15:04")
 		fmt.Printf("%s  %-15s (%s)", timeStr, task, status)
 		if s.Note != "" {
@@ -272,6 +277,54 @@ func handleThemes() {
 
 		fmt.Printf("  %-16s %s  %s  %s  - %s\n", t.Name, swatch, brk, acc, t.Description)
 	}
+}
+
+func handleScreenshotPreview() {
+	previewCmd := flag.NewFlagSet("screenshot-preview", flag.ExitOnError)
+	layoutFlag := previewCmd.String("layout", "monolith", "Layout to render")
+	themeFlag := previewCmd.String("theme", "daily", "Theme to render")
+	effectsFlag := previewCmd.String("effects", "none", "Ambient effect to render")
+	widthFlag := previewCmd.Int("width", 80, "Preview width")
+	heightFlag := previewCmd.Int("height", 24, "Preview height")
+	zenFlag := previewCmd.Bool("zen", false, "Render zen mode")
+
+	if err := previewCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if *widthFlag < 40 || *heightFlag < 10 {
+		fmt.Fprintln(os.Stderr, "Error: preview size must be at least 40x10")
+		os.Exit(1)
+	}
+
+	_ = theme.LoadExternalThemes()
+	resolvedTheme := theme.ResolveThemeName(*themeFlag)
+	resolvedLayout := render.ResolveLayoutName(*layoutFlag)
+	resolvedEffects := render.ResolveEffectsName(*effectsFlag)
+	th := theme.Get(resolvedTheme)
+	frame := render.Frame{Width: *widthFlag, Height: *heightFlag}
+	layoutName, layoutFunc := render.ResolveLayout(resolvedLayout, frame.Width, frame.Height)
+	ds := render.DisplayState{
+		ModeLabel:        "Building",
+		Project:          "PomoGo",
+		Task:             "refine terminal focus",
+		PhaseKind:        timer.PhaseWork,
+		SegmentRemaining: 18*time.Minute + 32*time.Second,
+		BlockRemaining:   2*time.Hour + 12*time.Minute + 9*time.Second,
+		Progress:         0.42,
+		SegmentIndex:     2,
+		SegmentCount:     4,
+		Running:          true,
+		StatusMessage:    "focus · break in 19m",
+		HintsVisibility:  true,
+		ThemeName:        resolvedTheme,
+		LayoutName:       layoutName,
+		Zen:              *zenFlag,
+		GitBranch:        "feature/focus-polish",
+		TmuxSession:      "work",
+	}
+
+	fmt.Print(render.RenderAmbient(resolvedEffects, 42, frame, th, layoutFunc(ds, th, frame)))
 }
 
 func handleRecap() {
@@ -375,12 +428,14 @@ _pomogo() {
     local -a subcmds
     subcmds=(
         'version:Show version information'
-        'config:Manage configuration'
-        'stats:Show focus statistics'
-        'history:Show detailed session history'
-        'status:Show current session status'
-        'completion:Generate shell completions'
-        'help:Show help message'
+		'config:Manage configuration'
+		'stats:Show focus statistics'
+		'history:Show detailed session history'
+		'themes:List color themes'
+		'screenshot-preview:Render a non-interactive terminal preview'
+		'status:Show current session status'
+		'completion:Generate shell completions'
+		'help:Show help message'
     )
     
     _arguments \
@@ -418,7 +473,7 @@ const bashCompletionScript = `_pomogo_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="version config stats history completion help status"
+	opts="version config stats history themes screenshot-preview completion help status"
 
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -448,7 +503,7 @@ complete -F _pomogo_completion pomogo
 `
 
 const fishCompletionScript = `complete -c pomogo -f
-complete -c pomogo -n "not __fish_seen_subcommand_from version config stats history completion help status" -a "version config stats history completion help status"
+complete -c pomogo -n "not __fish_seen_subcommand_from version config stats history themes screenshot-preview completion help status" -a "version config stats history themes screenshot-preview completion help status"
 complete -c pomogo -n "__fish_seen_subcommand_from config" -a "init"
 complete -c pomogo -n "__fish_seen_subcommand_from stats" -l week -d "Show weekly activity"
 complete -c pomogo -n "__fish_seen_subcommand_from stats" -l month -d "Show monthly summary"
