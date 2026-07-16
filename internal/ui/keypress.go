@@ -14,6 +14,10 @@ import (
 
 func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.zenMode {
+		if m.keymap.Quit.Matches(msg.String()) {
+			m.persistOnQuit()
+			return m, tea.Quit
+		}
 		m.zenMode = false
 		return m, nil
 	}
@@ -24,7 +28,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.showHelp {
 		switch {
-		case m.keymap.Help.Matches(msg.String()) || msg.String() == "esc":
+		case m.keymap.Help.Matches(msg.String()) || m.keymap.Back.Matches(msg.String()):
 			m.showHelp = false
 		case m.keymap.Quit.Matches(msg.String()):
 			m.persistOnQuit()
@@ -36,6 +40,9 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// 1. Duration Picker Input Mode
 	if m.inputMode == modeDurationPicker {
 		switch msg.String() {
+		case "q", "ctrl+c":
+			m.persistOnQuit()
+			return m, tea.Quit
 		case "up":
 			m.selectedDurationIdx--
 			if m.selectedDurationIdx < 0 {
@@ -158,11 +165,11 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			prevPhase := m.runner.Timer.Phase
 			startedAt := m.runner.Timer.StartedAt
 			duration := m.getDurationForPhase()
-			_, blockEnded := m.runner.Skip(timer.RealClock{})
+			evt, _ := m.runner.Skip(timer.RealClock{})
 
 			m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
 
-			if blockEnded {
+			if evt.Type == session.EventBlockEnded {
 				m.finishBlock(false)
 				if m.selectedMode == session.ModeDeep && m.cfg.PromptForNotes {
 					sess := &store.Session{
@@ -246,34 +253,39 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case m.keymap.Help.Matches(msg.String()):
 		m.showHelp = true
-	case msg.String() == "T":
+	case m.keymap.CycleTheme.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.cycleTheme()
 			m.statusMessage = fmt.Sprintf("Theme: %s", m.currentThemeName)
 			return m, m.clearStatusAfter2s()
 		}
-	case msg.String() == "L":
+	case m.keymap.CycleLayout.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.cycleLayout()
 			m.statusMessage = fmt.Sprintf("Layout: %s", m.currentLayoutName)
 			return m, m.clearStatusAfter2s()
 		}
-	case msg.String() == "S":
+	case m.keymap.ToggleZen.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.zenMode = !m.zenMode
 			return m, nil
 		}
-	case msg.String() == "e":
+	case m.keymap.CycleEffects.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.cycleEffects()
 			m.statusMessage = fmt.Sprintf("Effects: %s", m.currentEffectsName)
 			return m, m.clearStatusAfter2s()
 		}
-	case msg.String() == "v":
+	case m.keymap.CycleVerb.Matches(msg.String()):
 		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
 			m.cycleVerbLabel()
 			m.statusMessage = fmt.Sprintf("Activity: %s", m.currentVerbLabel)
 			return m, m.clearStatusAfter2s()
+		}
+	case m.keymap.Back.Matches(msg.String()):
+		if m.showStats {
+			m.showStats = false
+			return m, nil
 		}
 	}
 	return m, nil

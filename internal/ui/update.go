@@ -63,10 +63,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			startedAt := m.runner.Timer.StartedAt
 			duration := m.getDurationForPhase()
 
-			evt, blockEnded := m.runner.Tick(timer.RealClock{})
+			evt, _ := m.runner.Tick(timer.RealClock{})
 			if evt.Type != session.EventNone {
 				m.recordSession(prevPhase, startedAt, time.Now(), true, duration)
-				if blockEnded {
+				if evt.Type == session.EventBlockEnded {
 					m.finishBlock(true)
 					if m.selectedMode == session.ModeDeep && m.cfg.PromptForNotes {
 						sess := &store.Session{
@@ -104,6 +104,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.inputMode != modeNone {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if m.inputMode == modeRecapScreen && m.keymap.Quit.Matches(keyMsg.String()) {
+				m.persistOnQuit()
+				return m, tea.Quit
+			}
 			switch keyMsg.String() {
 			case "esc":
 				if m.inputMode == modeNoteInput && m.pendingSession != nil {
@@ -113,6 +117,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pendingSession = nil
 					m.inputMode = modeRecapScreen
 					m.textInput.Blur()
+					return m, nil
+				}
+				if m.inputMode == modeRecapScreen {
+					m.inputMode = modeNone
 					return m, nil
 				}
 				m.inputMode = modeNone
@@ -238,9 +246,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prevPhase := m.runner.Timer.Phase
 				startedAt := m.runner.Timer.StartedAt
 				duration := m.getDurationForPhase()
-				_, blockEnded := m.runner.Skip(timer.RealClock{})
+				evt, _ := m.runner.Skip(timer.RealClock{})
 				m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
-				if blockEnded {
+				if evt.Type == session.EventBlockEnded {
 					m.finishBlock(false)
 				}
 				m.afterTransition(true)

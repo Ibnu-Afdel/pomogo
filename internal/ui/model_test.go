@@ -268,9 +268,6 @@ func TestKeyboardSpacePauseResumeAcrossThemesAndLayouts(t *testing.T) {
 				}
 
 				_, cmd := model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
-				if cmd != nil {
-					_ = cmd()
-				}
 				if !model.runner.Timer.IsPaused {
 					t.Fatalf("space did not pause for theme=%s layout=%s", themeName, layoutName)
 				}
@@ -279,14 +276,122 @@ func TestKeyboardSpacePauseResumeAcrossThemesAndLayouts(t *testing.T) {
 				}
 
 				_, cmd = model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
-				if cmd != nil {
-					_ = cmd()
-				}
+				_ = cmd
 				if model.runner.Timer.IsPaused {
 					t.Fatalf("second space did not resume for theme=%s layout=%s", themeName, layoutName)
 				}
 				if view := model.View(); view == "" {
 					t.Fatal("resumed view is empty")
+				}
+			})
+		}
+	}
+}
+
+func TestGlobalKeysAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+
+				_, _ = model.Update(keyRunes("d"))
+				if model.inputMode != modeDurationPicker {
+					t.Fatal("d did not open Deep Focus duration picker")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close duration picker")
+				}
+
+				_, _ = model.Update(keyRunes("t"))
+				if model.inputMode != modeTaskInput {
+					t.Fatal("t did not open task input")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close task input")
+				}
+
+				_, _ = model.Update(keyRunes("p"))
+				if model.inputMode != modeProjectInput {
+					t.Fatal("p did not open project input")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close project input")
+				}
+
+				_, _ = model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+				if !model.showStats {
+					t.Fatal("tab did not open stats")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.showStats {
+					t.Fatal("esc did not close stats")
+				}
+
+				_, _ = model.Update(keyRunes("?"))
+				if !model.showHelp {
+					t.Fatal("? did not open help")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.showHelp {
+					t.Fatal("esc did not close help")
+				}
+
+				oldTheme := model.currentThemeName
+				_, _ = model.Update(keyRunes("T"))
+				if model.currentThemeName == oldTheme {
+					t.Fatal("T did not cycle theme")
+				}
+
+				oldLayout := model.currentLayoutName
+				_, _ = model.Update(keyRunes("L"))
+				if model.currentLayoutName == oldLayout {
+					t.Fatal("L did not cycle layout")
+				}
+
+				_, _ = model.Update(keyRunes("S"))
+				if !model.zenMode {
+					t.Fatal("S did not enable zen mode")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.zenMode {
+					t.Fatal("esc did not exit zen mode")
+				}
+
+				oldEffects := model.currentEffectsName
+				_, _ = model.Update(keyRunes("e"))
+				if model.currentEffectsName == oldEffects {
+					t.Fatal("e did not cycle effects")
+				}
+
+				oldVerb := model.currentVerbLabel
+				_, _ = model.Update(keyRunes("v"))
+				if model.currentVerbLabel == oldVerb {
+					t.Fatal("v did not cycle activity verb")
+				}
+
+				_, _ = model.Update(keyRunes("s"))
+				if !model.runner.Timer.IsRunning {
+					t.Fatal("s did not start timer")
+				}
+
+				_, _ = model.Update(keyRunes("n"))
+				if model.runner.Block.Index == 0 && model.runner.Block.CurrentSegment.Kind == session.SegmentKindWork {
+					t.Fatal("n did not skip the current segment")
+				}
+
+				_, _ = model.Update(keyRunes("r"))
+				if model.runner.Timer.IsRunning || model.runner.Timer.IsPaused {
+					t.Fatalf("r did not reset timer: inputMode=%d state=%s phase=%s running=%v paused=%v status=%q",
+						model.inputMode,
+						model.runner.Timer.State,
+						model.runner.Timer.Phase,
+						model.runner.Timer.IsRunning,
+						model.runner.Timer.IsPaused,
+						model.statusMessage,
+					)
 				}
 			})
 		}
@@ -301,6 +406,7 @@ func newKeyboardTestModel(t *testing.T, themeName, layoutName string) *Model {
 	cfg := config.Default()
 	cfg.Theme = themeName
 	cfg.Layout = layoutName
+	cfg.PromptForNotes = false
 	model := NewModel(cfg)
 	model.width = 120
 	model.height = 32
@@ -309,6 +415,14 @@ func newKeyboardTestModel(t *testing.T, themeName, layoutName string) *Model {
 	model.theme = theme.Get(themeName)
 	model.currentLayoutName = layoutName
 	return model
+}
+
+func keyRunes(s string) tea.KeyMsg {
+	return tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune(s)})
+}
+
+func keyEsc() tea.KeyMsg {
+	return tea.KeyMsg(tea.Key{Type: tea.KeyEsc})
 }
 
 func isQuitCmd(cmd tea.Cmd) bool {
