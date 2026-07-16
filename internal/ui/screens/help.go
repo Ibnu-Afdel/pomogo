@@ -3,8 +3,9 @@ package screens
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // HelpBinding represents a key mapping to be shown on the help screen.
@@ -28,7 +29,7 @@ func Help(width, height int, th *theme.Theme, bindings []HelpBinding) string {
 	var rows []string
 	for _, b := range bindings {
 		// Calculate dynamic padding to align descriptions
-		padLen := 14 - len(b.Keys)
+		padLen := 14 - render.TextWidth(b.Keys)
 		if padLen < 1 {
 			padLen = 1
 		}
