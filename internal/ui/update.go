@@ -102,6 +102,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(titleCmd, m.tick1s())
 	}
 
+	if m.inputMode == modeDurationPicker || m.inputMode == modeCustomDurationInput {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.handleKeypress(keyMsg)
+		}
+	}
+
 	if m.inputMode != modeNone {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			if m.inputMode == modeRecapScreen && m.keymap.Quit.Matches(keyMsg.String()) {

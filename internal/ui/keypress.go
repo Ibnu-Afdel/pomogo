@@ -43,12 +43,14 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.String() == "q" || msg.String() == "ctrl+c":
 			m.persistOnQuit()
 			return m, tea.Quit
-		case msg.Type == tea.KeyUp || msg.String() == "up":
+		case msg.String() == "1", msg.String() == "2", msg.String() == "3", msg.String() == "4":
+			m.selectedDurationIdx = int(msg.String()[0] - '1')
+		case msg.Type == tea.KeyUp || msg.String() == "up" || msg.String() == "k" || msg.String() == "shift+tab":
 			m.selectedDurationIdx--
 			if m.selectedDurationIdx < 0 {
 				m.selectedDurationIdx = 4
 			}
-		case msg.Type == tea.KeyDown || msg.String() == "down":
+		case msg.Type == tea.KeyDown || msg.String() == "down" || msg.String() == "j" || msg.Type == tea.KeyTab || msg.String() == "tab":
 			m.selectedDurationIdx++
 			if m.selectedDurationIdx > 4 {
 				m.selectedDurationIdx = 0
@@ -58,16 +60,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.Type == tea.KeyEnter || msg.String() == "enter":
 			if m.selectedDurationIdx >= 0 && m.selectedDurationIdx <= 3 {
 				m.deepDuration = time.Duration(m.selectedDurationIdx+1) * time.Hour
-				block := session.NewDeepBlock(
-					m.deepDuration,
-					m.cfg.DeepFocusWorkDurationAsDuration(),
-					m.cfg.DeepFocusShortBreakDurationAsDuration(),
-					m.cfg.DeepFocusLongBreakDurationAsDuration(),
-					m.cfg.DeepFocusSessionsBeforeLongBreak(),
-					true,
-				)
-				m.runner = session.NewRunner(block)
-				m.selectedMode = session.ModeDeep
+				m.configureDeepFocus(m.deepDuration)
 				m.inputMode = modeNone
 			} else if m.selectedDurationIdx == 4 {
 				m.inputMode = modeCustomDurationInput
@@ -93,16 +86,7 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.deepDuration = d
-			block := session.NewDeepBlock(
-				m.deepDuration,
-				m.cfg.DeepFocusWorkDurationAsDuration(),
-				m.cfg.DeepFocusShortBreakDurationAsDuration(),
-				m.cfg.DeepFocusLongBreakDurationAsDuration(),
-				m.cfg.DeepFocusSessionsBeforeLongBreak(),
-				true,
-			)
-			m.runner = session.NewRunner(block)
-			m.selectedMode = session.ModeDeep
+			m.configureDeepFocus(m.deepDuration)
 			m.inputMode = modeNone
 		}
 		var cmd tea.Cmd
@@ -293,6 +277,27 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) configureDeepFocus(d time.Duration) {
+	block := session.NewDeepBlock(
+		d,
+		m.cfg.DeepFocusWorkDurationAsDuration(),
+		m.cfg.DeepFocusShortBreakDurationAsDuration(),
+		m.cfg.DeepFocusLongBreakDurationAsDuration(),
+		m.cfg.DeepFocusSessionsBeforeLongBreak(),
+		true,
+	)
+	m.runner = session.NewRunner(block)
+	m.selectedMode = session.ModeDeep
+	m.deepDuration = d
+	m.statusMessage = fmt.Sprintf(
+		"Deep Focus: %d min block · %dm/%dm/%dm rhythm",
+		int(d.Minutes()),
+		int(m.cfg.DeepFocusWorkDurationAsDuration().Minutes()),
+		int(m.cfg.DeepFocusShortBreakDurationAsDuration().Minutes()),
+		int(m.cfg.DeepFocusLongBreakDurationAsDuration().Minutes()),
+	)
 }
 
 func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

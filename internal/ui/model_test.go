@@ -429,6 +429,14 @@ func keyDown() tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyDown}
 }
 
+func keyTab() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyTab}
+}
+
+func keyEnter() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyEnter}
+}
+
 func isQuitCmd(cmd tea.Cmd) bool {
 	if cmd == nil {
 		return false
@@ -446,13 +454,13 @@ func TestDeepFocusFourHourUsesLongBreakCadence(t *testing.T) {
 		t.Fatalf("d did not open duration picker; input mode = %v", model.inputMode)
 	}
 	for i := 0; i < 5 && model.selectedDurationIdx != 3; i++ {
-		updated, _ = model.handleKeypress(keyDown())
+		updated, _ = model.Update(keyDown())
 		model = updated.(*Model)
 	}
 	if model.selectedDurationIdx != 3 {
 		t.Fatalf("selected duration index = %d, want 3 for 4h", model.selectedDurationIdx)
 	}
-	updated, _ = model.handleKeypress(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = model.Update(keyEnter())
 	model = updated.(*Model)
 	if model.inputMode != modeNone {
 		t.Fatalf("enter did not close duration picker; input mode = %v", model.inputMode)
@@ -482,6 +490,42 @@ func TestDeepFocusFourHourUsesLongBreakCadence(t *testing.T) {
 	model = updated.(*Model)
 	if !model.runner.Timer.IsRunning {
 		t.Fatal("4h deep focus session did not start")
+	}
+}
+
+func TestDeepFocusPickerTabEnterUsesSelectedDuration(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("d"))
+	model = updated.(*Model)
+	if model.inputMode != modeDurationPicker {
+		t.Fatalf("d did not open duration picker; input mode = %v", model.inputMode)
+	}
+
+	for i := 0; i < 5 && model.selectedDurationIdx != 3; i++ {
+		updated, _ = model.Update(keyTab())
+		model = updated.(*Model)
+	}
+	if model.selectedDurationIdx != 3 {
+		t.Fatalf("tab selected duration index = %d, want 3 for 4h", model.selectedDurationIdx)
+	}
+
+	updated, _ = model.Update(keyEnter())
+	model = updated.(*Model)
+	if model.selectedMode != session.ModeDeep {
+		t.Fatalf("selected mode = %s, want deep", model.selectedMode)
+	}
+	if model.deepDuration != 4*time.Hour {
+		t.Fatalf("deep duration = %v, want 4h", model.deepDuration)
+	}
+	if model.runner.Timer.RemainingTime != 25*time.Minute {
+		t.Fatalf("first hidden segment = %v, want 25m", model.runner.Timer.RemainingTime)
+	}
+	if remaining := model.runner.Block.Remaining(model.runner.Timer.RemainingTime); remaining != 4*time.Hour {
+		t.Fatalf("deep block remaining = %v, want 4h", remaining)
+	}
+	if !strings.Contains(model.statusMessage, "240 min block") {
+		t.Fatalf("status message %q does not expose selected minutes", model.statusMessage)
 	}
 }
 

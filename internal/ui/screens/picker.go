@@ -24,10 +24,10 @@ func DurationPicker(width, height int, th *theme.Theme, selectedIdx int, default
 	)
 
 	options := []string{
-		"1 hour",
-		"2 hours",
-		"3 hours",
-		"4 hours",
+		"60 min  (1 hour)",
+		"120 min (2 hours)",
+		"180 min (3 hours)",
+		"240 min (4 hours)",
 		"Custom duration...",
 	}
 
@@ -50,7 +50,7 @@ func DurationPicker(width, height int, th *theme.Theme, selectedIdx int, default
 	}
 	rows = append(rows, "")
 
-	footer := "↓/↑ navigate  ·  enter select  ·  esc cancel"
+	footer := "↓/↑ or tab navigate  ·  1-4 jump  ·  enter select"
 	rows = append(rows, lipgloss.NewStyle().Foreground(muted).Render(footer))
 
 	box := lipgloss.NewStyle().

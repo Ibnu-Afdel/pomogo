@@ -13,7 +13,10 @@ func TestDurationPickerShowsDefaultAndRhythm(t *testing.T) {
 	if !strings.Contains(got, "2h block · 25m/5m/15m rhythm every 4") {
 		t.Fatalf("picker missing rhythm line: %q", got)
 	}
-	if !strings.Contains(got, "2 hours  default") {
+	if !strings.Contains(got, "120 min (2 hours)  default") {
 		t.Fatalf("picker missing default marker: %q", got)
+	}
+	if !strings.Contains(got, "240 min (4 hours)") {
+		t.Fatalf("picker missing minute-based 4h option: %q", got)
 	}
 }
