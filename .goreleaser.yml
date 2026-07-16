@@ -44,6 +44,8 @@ archives:
         dst: contrib/
       - src: README.md
         dst: README.md
+      - src: LICENSE
+        dst: LICENSE
     
     format_overrides:
       - goos: windows

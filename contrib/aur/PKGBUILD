@@ -6,7 +6,10 @@ pkgdesc="A beautiful terminal deep-work companion for developers."
 arch=('x86_64' 'aarch64')
 url="https://github.com/Ibnu-Afdel/pomogo"
 license=('MIT')
-depends=('libcanberra')
+optdepends=(
+  'libnotify: desktop notification fallback via notify-send'
+  'libcanberra: transition sounds via canberra-gtk-play'
+)
 provides=('pomogo')
 conflicts=('pomogo')
 source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::https://github.com/Ibnu-Afdel/pomogo/releases/download/v${pkgver}/pomogo-${pkgver}-linux-amd64.tar.gz")
@@ -17,4 +20,5 @@ sha256sums_aarch64=('SKIP')
 package() {
   install -Dm755 "${srcdir}/pomogo" "${pkgdir}/usr/bin/pomogo"
   install -Dm644 "${srcdir}/README.md" "${pkgdir}/usr/share/doc/pomogo/README.md"
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/pomogo/LICENSE"
 }
