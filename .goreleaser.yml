@@ -42,12 +42,8 @@ archives:
     files:
       - src: contrib/
         dst: contrib/
-      - src: docs/
-        dst: docs/
       - src: README.md
         dst: README.md
-      - src: PIPELINE-V2.md
-        dst: PIPELINE-V2.md
     
     format_overrides:
       - goos: windows
@@ -68,5 +64,30 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^Merge"
+
+release:
+  footer: |
+    ## TUI key bindings
+
+    | Key | Action |
+    |---|---|
+    | `s` | Start the current focus session |
+    | `space` | Pause / resume a running timer |
+    | `n` | Skip current segment |
+    | `t` | Edit task description |
+    | `p` | Edit project category |
+    | `d` | Choose a Deep Focus duration before starting |
+    | `tab` | Toggle statistics screen |
+    | `y` | Copy stats summary to clipboard |
+    | `T` | Cycle theme |
+    | `L` | Cycle layout |
+    | `a` | Choose sound profile |
+    | `S` | Toggle Zen / Screenshot mode |
+    | `e` | Cycle ambient background effects |
+    | `v` | Cycle task verb labels |
+    | `r` | Reset session |
+    | `esc` | Back / close overlay |
+    | `?` | Show help menu |
+    | `q`, `ctrl+c` | Quit |
 
 # No publishing configured yet (use: goreleaser release --snapshot --clean)

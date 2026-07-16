@@ -48,19 +48,45 @@ pomogo projects     # Manage focus projects
 
 | Key | Action |
 |---|---|
-| `s` | Start / Pause / Resume timer |
+| `s` | Start the current focus session |
+| `space` | Pause / resume a running timer |
 | `n` | Skip current segment |
 | `t` | Edit task description (supports autocomplete) |
 | `p` | Edit project category (supports autocomplete) |
+| `d` | Choose a Deep Focus duration before starting |
+| `tab` | Toggle statistics screen |
+| `y` | Copy stats summary to clipboard |
 | `T` | Cycle theme live |
 | `L` | Cycle layout live |
+| `a` | Choose sound profile |
+| `S` | Toggle Zen / Screenshot mode |
 | `e` | Cycle ambient background effects (none / stars / snow / rain) |
 | `v` | Cycle task verb labels (Focusing, Building, Fixing...) |
-| `S` | Toggle Zen / Screenshot mode |
-| `tab` | Toggle statistics screen |
 | `r` | Reset session |
+| `esc` | Back / close overlay |
 | `?` | Show help menu |
-| `q` | Quit |
+| `q`, `ctrl+c` | Quit |
+
+### Overlay Shortcuts
+
+| Screen | Key | Action |
+|---|---|---|
+| Help | `?`, `esc` | Close help |
+| Restore prompt | `y` | Restore the saved session |
+| Restore prompt | `n`, `esc` | Discard the saved session |
+| Deep Focus duration picker | `up`, `k`, `shift+tab` | Move selection up |
+| Deep Focus duration picker | `down`, `j`, `tab` | Move selection down |
+| Deep Focus duration picker | `1`-`4` | Jump to a 1-4 hour preset |
+| Deep Focus duration picker | `enter` | Select duration |
+| Deep Focus duration picker | `esc` | Cancel picker |
+| Custom duration input | `enter` | Apply typed duration |
+| Custom duration input | `esc` | Return to duration picker |
+| Sound picker | `up`, `k`, `shift+tab` | Move selection up |
+| Sound picker | `down`, `j`, `tab` | Move selection down |
+| Sound picker | `space` | Preview selected sound |
+| Sound picker | `enter` | Apply selected sound profile |
+| Sound picker | `esc` | Cancel picker |
+| Any picker / prompt | `q`, `ctrl+c` | Quit |
 
 ---
 
@@ -101,8 +127,6 @@ show_tmux = false
 ---
 
 ## Development
-
-Product direction lives in [`docs/00-product-vision.md`](docs/00-product-vision.md), with current research notes in [`docs/07-product-research.md`](docs/07-product-research.md).
 
 Run tests and linters:
 ```sh
