@@ -127,6 +127,9 @@ func RunDoctor() []Diagnostic {
 	if malformed := theme.CheckExternalThemes(); len(malformed) > 0 {
 		themeDiag.Passed = false
 		themeDiag.Message = fmt.Sprintf("Malformed theme files found: %s", strings.Join(malformed, ", "))
+	} else if lowContrast := theme.CheckExternalThemeContrast(); len(lowContrast) > 0 {
+		themeDiag.Passed = false
+		themeDiag.Message = fmt.Sprintf("Low-contrast theme files found: %s", strings.Join(lowContrast, ", "))
 	}
 	diagnostics = append(diagnostics, themeDiag)
 

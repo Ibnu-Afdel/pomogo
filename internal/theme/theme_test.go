@@ -3,6 +3,7 @@ package theme
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,7 @@ func TestRegistry(t *testing.T) {
 		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
 		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
 		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
+		"high-contrast",
 	}
 
 	for _, name := range expectedThemes {
@@ -78,8 +80,8 @@ func TestGet(t *testing.T) {
 func TestList(t *testing.T) {
 	themes := List()
 
-	if len(themes) != 15 {
-		t.Errorf("List() returned %d themes, want 15", len(themes))
+	if len(themes) != 16 {
+		t.Errorf("List() returned %d themes, want 16", len(themes))
 	}
 }
 
@@ -154,5 +156,61 @@ description = "A neat custom theme."
 	}
 	if theme.LongBreak != "#0000ff" {
 		t.Errorf("got LongBreak color %s, want #0000ff", theme.LongBreak)
+	}
+}
+
+func TestContrastRatio(t *testing.T) {
+	ratio, err := ContrastRatio("#ffffff", "#000000")
+	if err != nil {
+		t.Fatalf("ContrastRatio failed: %v", err)
+	}
+	if ratio < 21 || ratio > 22 {
+		t.Errorf("black/white contrast = %.2f, want about 21", ratio)
+	}
+}
+
+func TestBuiltInThemeContrast(t *testing.T) {
+	for name, th := range Registry {
+		t.Run(name, func(t *testing.T) {
+			if issues := ThemeContrastIssues(th); len(issues) > 0 {
+				t.Fatalf("built-in theme has contrast issues: %v", issues)
+			}
+		})
+	}
+}
+
+func TestCheckExternalThemeContrast(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	themesDir := filepath.Join(tmpDir, "pomogo", "themes")
+	if err := os.MkdirAll(themesDir, 0755); err != nil {
+		t.Fatalf("failed to create themes dir: %v", err)
+	}
+
+	content := `
+name = "low-contrast"
+work = "#111111"
+break = "#111111"
+long-break = "#111111"
+idle = "#111111"
+accent = "#121212"
+background = "#111111"
+text = "#121212"
+muted = "#121212"
+subtle = "#111111"
+border = "#121212"
+progress-fill = "#121212"
+progress-track = "#111111"
+ambient = "#111111"
+description = "Low contrast test theme."
+`
+	if err := os.WriteFile(filepath.Join(themesDir, "low.toml"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write theme: %v", err)
+	}
+
+	got := CheckExternalThemeContrast()
+	if len(got) != 1 || !strings.Contains(got[0], "low.toml") {
+		t.Fatalf("expected low contrast theme warning, got %v", got)
 	}
 }

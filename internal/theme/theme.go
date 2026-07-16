@@ -50,6 +50,7 @@ var Registry = map[string]*Theme{
 	"ayu-mirage":       AyuMirage(),
 	"solarized-dark":   SolarizedDark(),
 	"oxocarbon":        Oxocarbon(),
+	"high-contrast":    HighContrast(),
 }
 
 // Get retrieves a theme by name. Returns default (Tokyo Night) if not found.
@@ -222,7 +223,7 @@ func Nord() *Theme {
 		Accent:        "#81a1c1",
 		Background:    "#2e3440",
 		Text:          "#d8dee9",
-		Muted:         "#4c566a",
+		Muted:         "#81a1c1",
 		Subtle:        "#3b4252",
 		Border:        "#434c5e",
 		ProgressFill:  "#88c0d0",
@@ -405,6 +406,27 @@ func Oxocarbon() *Theme {
 	}
 }
 
+// HighContrast returns a strict accessibility-oriented dark theme.
+func HighContrast() *Theme {
+	return &Theme{
+		Name:          "high-contrast",
+		Work:          "#ff5f5f",
+		Break:         "#00d7ff",
+		LongBreak:     "#5fff87",
+		Idle:          "#bcbcbc",
+		Accent:        "#ffd700",
+		Background:    "#000000",
+		Text:          "#ffffff",
+		Muted:         "#bcbcbc",
+		Subtle:        "#1c1c1c",
+		Border:        "#ffffff",
+		ProgressFill:  "#ffd700",
+		ProgressTrack: "#3a3a3a",
+		Ambient:       "#262626",
+		Description:   "Maximum contrast dark theme for readability.",
+	}
+}
+
 // ExternalTheme represents the TOML representation of an external theme file.
 type ExternalTheme struct {
 	Name          string `toml:"name"`
@@ -500,6 +522,40 @@ func CheckExternalThemes() []string {
 		}
 	}
 	return malformed
+}
+
+// CheckExternalThemeContrast returns external theme files with low-contrast core roles.
+func CheckExternalThemeContrast() []string {
+	var lowContrast []string
+	themesDir := filepath.Join(xdgConfigDir(), "themes")
+	if _, err := os.Stat(themesDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	files, err := filepath.Glob(filepath.Join(themesDir, "*.toml"))
+	if err != nil {
+		return nil
+	}
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var et ExternalTheme
+		if err := toml.Unmarshal(data, &et); err != nil {
+			continue
+		}
+		if et.Name == "" {
+			stem := filepath.Base(file)
+			stem = strings.TrimSuffix(stem, filepath.Ext(stem))
+			et.Name = stem
+		}
+		if issues := ThemeContrastIssues(et.ToTheme()); len(issues) > 0 {
+			lowContrast = append(lowContrast, fmt.Sprintf("%s (%s)", filepath.Base(file), strings.Join(issues, "; ")))
+		}
+	}
+	return lowContrast
 }
 
 func xdgConfigDir() string {
