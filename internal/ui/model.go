@@ -522,6 +522,7 @@ func (m *Model) getRecapInfo() screens.RecapInfo {
 	var totalFocused time.Duration
 	pauses := 0
 	segments := 0
+	breaks := 0
 	isDeep := m.selectedMode == session.ModeDeep
 	focusScore := 10
 
@@ -547,21 +548,35 @@ func (m *Model) getRecapInfo() screens.RecapInfo {
 			}
 		}
 		segments = completedCount
+		breaks = countBreakSegments(m.runner.Block.Segments)
 		focusScore = stats.CalculateFocusScore(pauses, skippedBreaks, abandoned)
 	} else {
-		segments = m.cfg.SessionsBeforeLongBreak
-		totalFocused = m.cfg.WorkDurationAsDuration() * time.Duration(segments)
+		segments = m.cfg.QuickFocusSessionsBeforeLongBreak()
+		breaks = segments
+		totalFocused = m.cfg.QuickFocusWorkDurationAsDuration() * time.Duration(segments)
 		pauses = 0
+		focusScore = stats.CalculateFocusScore(pauses, 0, 0)
 	}
 
 	return screens.RecapInfo{
 		TotalFocused: totalFocused,
 		Segments:     segments,
+		Breaks:       breaks,
 		Pauses:       pauses,
 		Streak:       streak,
 		IsDeep:       isDeep,
 		FocusScore:   focusScore,
 	}
+}
+
+func countBreakSegments(segments []session.Segment) int {
+	count := 0
+	for _, seg := range segments {
+		if seg.Kind == session.SegmentKindShortBreak || seg.Kind == session.SegmentKindLongBreak {
+			count++
+		}
+	}
+	return count
 }
 
 func (m *Model) cycleVerbLabel() {

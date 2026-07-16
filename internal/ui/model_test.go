@@ -866,9 +866,11 @@ func TestRecapScreen(t *testing.T) {
 	info := screens.RecapInfo{
 		TotalFocused: 1*time.Hour + 30*time.Minute,
 		Segments:     3,
+		Breaks:       2,
 		Pauses:       1,
 		Streak:       5,
 		IsDeep:       true,
+		FocusScore:   8,
 	}
 
 	got := screens.Recap(80, 24, model.theme, info)

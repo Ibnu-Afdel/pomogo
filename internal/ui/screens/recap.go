@@ -13,6 +13,7 @@ import (
 type RecapInfo struct {
 	TotalFocused time.Duration
 	Segments     int
+	Breaks       int
 	Pauses       int
 	Streak       int
 	IsDeep       bool
@@ -25,7 +26,6 @@ func Recap(width, height int, th *theme.Theme, info RecapInfo) string {
 	mutedCol := lipgloss.Color(th.Muted.String())
 	txtCol := lipgloss.Color(th.Text.String())
 	borderCol := lipgloss.Color(th.Border.String())
-	workCol := lipgloss.Color(th.Work.String())
 
 	textW := width - 12
 	if textW > 50 {
@@ -40,7 +40,7 @@ func Recap(width, height int, th *theme.Theme, info RecapInfo) string {
 	}
 
 	title := lipgloss.NewStyle().Foreground(accentCol).Bold(true).Render("✦ FOCUS CYCLE COMPLETE ✦")
-	banner := lipgloss.NewStyle().Foreground(workCol).Bold(true).Render("EXCELLENT WORK!")
+	tone := lipgloss.NewStyle().Foreground(mutedCol).Render(recapTone(info))
 
 	// Stats rows
 	modeStr := "Quick Focus"
@@ -71,25 +71,24 @@ func Recap(width, height int, th *theme.Theme, info RecapInfo) string {
 	var lines []string
 	lines = append(lines, "")
 	lines = append(lines, center(title))
-	lines = append(lines, center(banner))
+	lines = append(lines, center(tone))
 	lines = append(lines, "")
 	lines = append(lines, center(row("Mode", modeStr)))
 	lines = append(lines, center(row("Time Focused", timeStr)))
 	lines = append(lines, center(row("Segments Done", fmt.Sprintf("%d Completed", info.Segments))))
+	lines = append(lines, center(row("Breaks", fmt.Sprintf("%d", info.Breaks))))
 	lines = append(lines, center(row("Pauses Taken", fmt.Sprintf("%d", info.Pauses))))
 	lines = append(lines, center(row("Daily Streak", streakStr)))
-	if info.IsDeep {
-		fillBlocks := info.FocusScore
-		if fillBlocks < 0 {
-			fillBlocks = 0
-		}
-		if fillBlocks > 10 {
-			fillBlocks = 10
-		}
-		emptyBlocks := 10 - fillBlocks
-		scoreVal := strings.Repeat("■", fillBlocks) + strings.Repeat("□", emptyBlocks) + fmt.Sprintf(" %d/10", info.FocusScore)
-		lines = append(lines, center(row("Focus Score", scoreVal)))
+	fillBlocks := info.FocusScore
+	if fillBlocks < 0 {
+		fillBlocks = 0
 	}
+	if fillBlocks > 10 {
+		fillBlocks = 10
+	}
+	emptyBlocks := 10 - fillBlocks
+	scoreVal := strings.Repeat("■", fillBlocks) + strings.Repeat("□", emptyBlocks) + fmt.Sprintf(" %d/10", info.FocusScore)
+	lines = append(lines, center(row("Focus Score", scoreVal)))
 	lines = append(lines, "")
 	lines = append(lines, center(lipgloss.NewStyle().Foreground(mutedCol).Render("Press [Enter] to dismiss")))
 	lines = append(lines, "")
@@ -101,4 +100,20 @@ func Recap(width, height int, th *theme.Theme, info RecapInfo) string {
 		Render(strings.Join(lines, "\n"))
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func recapTone(info RecapInfo) string {
+	if info.Pauses == 0 && info.FocusScore >= 9 {
+		if info.IsDeep {
+			return "deep run · clean block"
+		}
+		return "clean focus cycle"
+	}
+	if info.FocusScore < 7 {
+		return "interrupted block"
+	}
+	if info.IsDeep {
+		return "deep run"
+	}
+	return "steady focus cycle"
 }
