@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
@@ -35,11 +36,12 @@ func TestRestore(t *testing.T) {
 	defer manager.Remove()
 
 	// Create and save a session
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
-	session.SessionCount = 2
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	runner.Timer.SessionCount = 2
 
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		t.Fatalf("Failed to write state: %v", err)
 	}
 
@@ -47,8 +49,6 @@ func TestRestore(t *testing.T) {
 	restored, remaining, err := Restore()
 	if err != nil {
 		t.Logf("Restore failed (expected in test): %v", err)
-		// In test environment, IsStale might not work correctly
-		// since the current process is still running
 	} else {
 		if restored == nil {
 			t.Fatal("Restored session should not be nil")
@@ -95,7 +95,7 @@ func TestRestoreExpiredSession(t *testing.T) {
 
 // TestRestoreSessionState tests restoring session state from saved data.
 func TestRestoreSessionState(t *testing.T) {
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	sessionObj := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	state := &statefile.State{
 		SessionState:  "work",
 		SessionType:   "work",
@@ -107,24 +107,24 @@ func TestRestoreSessionState(t *testing.T) {
 		UpdatedAt:     time.Now().Unix(),
 	}
 
-	if err := restoreSessionState(session, state); err != nil {
+	if err := restoreSessionState(sessionObj, state); err != nil {
 		t.Fatalf("restoreSessionState failed: %v", err)
 	}
 
-	if session.Phase != timer.PhaseWork {
-		t.Errorf("Phase = %v, want Work", session.Phase)
+	if sessionObj.Phase != timer.PhaseWork {
+		t.Errorf("Phase = %v, want Work", sessionObj.Phase)
 	}
-	if session.SessionCount != 2 {
-		t.Errorf("SessionCount = %d, want 2", session.SessionCount)
+	if sessionObj.SessionCount != 2 {
+		t.Errorf("SessionCount = %d, want 2", sessionObj.SessionCount)
 	}
-	if !session.IsRunning {
+	if !sessionObj.IsRunning {
 		t.Error("Session should be running after restore")
 	}
 }
 
 // TestRestoreSessionStateLongBreak tests restoring a long break session.
 func TestRestoreSessionStateLongBreak(t *testing.T) {
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	sessionObj := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	state := &statefile.State{
 		SessionState:  "long_break",
 		SessionType:   "long_break",
@@ -136,18 +136,18 @@ func TestRestoreSessionStateLongBreak(t *testing.T) {
 		UpdatedAt:     time.Now().Unix(),
 	}
 
-	if err := restoreSessionState(session, state); err != nil {
+	if err := restoreSessionState(sessionObj, state); err != nil {
 		t.Fatalf("restoreSessionState failed: %v", err)
 	}
 
-	if session.Phase != timer.PhaseLongBreak {
-		t.Errorf("Phase = %v, want LongBreak", session.Phase)
+	if sessionObj.Phase != timer.PhaseLongBreak {
+		t.Errorf("Phase = %v, want LongBreak", sessionObj.Phase)
 	}
 }
 
 // TestRestoreInvalidSessionType tests handling of invalid session type.
 func TestRestoreInvalidSessionType(t *testing.T) {
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	sessionObj := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	state := &statefile.State{
 		SessionState:  "unknown",
 		SessionType:   "invalid",
@@ -159,7 +159,7 @@ func TestRestoreInvalidSessionType(t *testing.T) {
 		UpdatedAt:     time.Now().Unix(),
 	}
 
-	err := restoreSessionState(session, state)
+	err := restoreSessionState(sessionObj, state)
 	if err == nil {
 		t.Error("restoreSessionState should error for invalid session type")
 	}
@@ -198,6 +198,85 @@ func TestCleanupExpired(t *testing.T) {
 	}
 }
 
+func TestRestoreRunnerWithDurations(t *testing.T) {
+	useTempRuntimeDir(t)
+	manager, err := statefile.NewManager()
+	if err != nil {
+		t.Fatalf("Failed to create state manager: %v", err)
+	}
+	defer manager.Remove()
+
+	// 1. Test Quick Focus Restore
+	blockQ := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runnerQ := session.NewRunner(blockQ)
+	runnerQ.Start(timer.RealClock{})
+	runnerQ.Timer.SessionCount = 2
+
+	if err := manager.Write(runnerQ, "Quick Task", nil, "Quick Project"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	restoredQ, err := RestoreRunnerWithDurations(Durations{
+		QuickWork:                    25 * time.Minute,
+		QuickShortBreak:              5 * time.Minute,
+		QuickLongBreak:               15 * time.Minute,
+		QuickSessionsBeforeLongBreak: 4,
+		QuickAutoAdvance:             true,
+		DeepWork:                     50 * time.Minute,
+		DeepShortBreak:               10 * time.Minute,
+		DeepLongBreak:                20 * time.Minute,
+		DeepSessionsBeforeLongBreak:  3,
+	})
+	if err != nil {
+		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
+	}
+	if restoredQ.Block.Mode != session.ModeQuick {
+		t.Errorf("expected mode quick, got %s", restoredQ.Block.Mode)
+	}
+	if restoredQ.Timer.SessionCount != 2 {
+		t.Errorf("expected SessionCount 2, got %d", restoredQ.Timer.SessionCount)
+	}
+	if !restoredQ.Block.AutoAdvance {
+		t.Error("expected restored quick block to preserve configured auto advance")
+	}
+
+	// 2. Test Deep Focus Restore
+	blockD := session.NewDeepBlock(120*time.Minute, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
+	runnerD := session.NewRunner(blockD)
+	runnerD.Start(timer.RealClock{})
+
+	if err := manager.Write(runnerD, "Deep Task", nil, "Deep Project"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	restoredD, err := RestoreRunnerWithDurations(Durations{
+		QuickWork:                    25 * time.Minute,
+		QuickShortBreak:              5 * time.Minute,
+		QuickLongBreak:               15 * time.Minute,
+		QuickSessionsBeforeLongBreak: 4,
+		QuickAutoAdvance:             true,
+		DeepWork:                     50 * time.Minute,
+		DeepShortBreak:               10 * time.Minute,
+		DeepLongBreak:                20 * time.Minute,
+		DeepSessionsBeforeLongBreak:  3,
+	})
+	if err != nil {
+		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
+	}
+	if restoredD.Block.Mode != session.ModeDeep {
+		t.Errorf("expected mode deep, got %s", restoredD.Block.Mode)
+	}
+	if restoredD.Block.PlannedTotal != 120*time.Minute {
+		t.Errorf("expected PlannedTotal 120m, got %v", restoredD.Block.PlannedTotal)
+	}
+	if restoredD.Block.Segments[0].Duration != 50*time.Minute {
+		t.Errorf("expected deep restore to use configured 50m work duration, got %v", restoredD.Block.Segments[0].Duration)
+	}
+	if restoredD.Block.SessionsBeforeLongBreak != 3 {
+		t.Errorf("expected deep restore to use configured long break cadence, got %d", restoredD.Block.SessionsBeforeLongBreak)
+	}
+}
+
 // BenchmarkCanRestore benchmarks the CanRestore check.
 func BenchmarkCanRestore(b *testing.B) {
 	b.Setenv("XDG_RUNTIME_DIR", b.TempDir())
@@ -209,7 +288,7 @@ func BenchmarkCanRestore(b *testing.B) {
 
 // BenchmarkRestoreSessionState benchmarks state restoration.
 func BenchmarkRestoreSessionState(b *testing.B) {
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	sessionObj := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
 	state := &statefile.State{
 		SessionState:  "work",
 		SessionType:   "work",
@@ -223,6 +302,6 @@ func BenchmarkRestoreSessionState(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = restoreSessionState(session, state)
+		_ = restoreSessionState(sessionObj, state)
 	}
 }

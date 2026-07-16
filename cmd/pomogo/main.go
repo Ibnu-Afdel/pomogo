@@ -13,10 +13,14 @@ import (
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
 	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
+	"github.com/Ibnu-Afdel/pomogo/internal/theme"
+	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Build-time variables injected via -ldflags.
@@ -41,6 +45,12 @@ func main() {
 		handleStats()
 	case "history":
 		handleHistory()
+	case "themes":
+		handleThemes()
+	case "screenshot-preview":
+		handleScreenshotPreview()
+	case "recap":
+		handleRecap()
 	case "status":
 		handleStatus()
 	case "completion":
@@ -116,6 +126,9 @@ func handleHelp() {
 	fmt.Println("  config init        Create a default config file")
 	fmt.Println("  stats              Show focus statistics")
 	fmt.Println("  history            Show detailed session history")
+	fmt.Println("  themes             List all available color themes with swatches")
+	fmt.Println("  screenshot-preview Render a non-interactive terminal preview")
+	fmt.Println("  recap              Show summary of the last completed block")
 	fmt.Println("  status             Show current session status")
 	fmt.Println("  completion         Generate shell completion scripts")
 	fmt.Println("  projects           Manage focus projects")
@@ -159,19 +172,23 @@ func handleStats() {
 	s := stats.Calculate(sessions, now)
 
 	if *weekFlag {
-		fmt.Println("Weekly Focus Activity:")
-		fmt.Println("----------------------")
+		fmt.Println("Weekly Focus Activity (mins):")
+		fmt.Println("-----------------------------")
 		for _, wd := range s.WeekDays {
+			barLen := wd.Minutes / 10
+			if barLen > 15 {
+				barLen = 15
+			}
 			bar := ""
-			if wd.Count > 0 {
-				bar = strings.Repeat("█", wd.Count)
+			if barLen > 0 {
+				bar = strings.Repeat("█", barLen)
 			} else {
 				bar = "░"
 			}
-			fmt.Printf("%s  %-10s %d\n", wd.Date.Format("Mon"), bar, wd.Count)
+			fmt.Printf("%s  %-15s %dm\n", wd.Date.Format("Mon"), bar, wd.Minutes)
 		}
 		fmt.Println()
-		fmt.Printf("Total Week Completed: %d sessions\n", s.WeekCount)
+		fmt.Printf("Total Week Completed: %d sessions (%d mins)\n", s.WeekCount, s.WeekMinutes)
 		return
 	}
 
@@ -185,10 +202,11 @@ func handleStats() {
 
 	fmt.Println("PomoGo Focus Statistics:")
 	fmt.Println("------------------------")
-	fmt.Printf("Today Completed:   %d sessions (%d mins focused)\n", s.TodayCount, s.TodayMinutes)
-	fmt.Printf("Current Streak:    %d days\n", s.CurrentStreak)
-	fmt.Printf("Best Streak:       %d days\n", s.BestStreak)
-	fmt.Printf("Monthly Completed: %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
+	fmt.Printf("Today Completed:    %d sessions (%d mins focused)\n", s.TodayCount, s.TodayMinutes)
+	fmt.Printf("Current Streak:     %d days\n", s.CurrentStreak)
+	fmt.Printf("Best Streak:        %d days\n", s.BestStreak)
+	fmt.Printf("Monthly Completed:  %d sessions (Rate: %.0f%%)\n", s.MonthCount, s.CompletionRate*100)
+	fmt.Printf("Lifetime Completed: %d sessions (%dh %dm focused)\n", s.LifetimeSessions, s.LifetimeMinutes/60, s.LifetimeMinutes%60)
 }
 
 func handleHistory() {
@@ -219,12 +237,12 @@ func handleHistory() {
 		if !s.Completed {
 			status = "skipped"
 		}
-		
+
 		task := s.Task
 		if task == "" {
 			task = "[no task]"
 		}
-		
+
 		timeStr := s.StartedAt.Local().Format("2006-01-02 15:04")
 		fmt.Printf("%s  %-15s (%s)", timeStr, task, status)
 		if s.Note != "" {
@@ -239,6 +257,119 @@ func handleHistory() {
 	if count == 0 {
 		fmt.Println("No work sessions recorded yet.")
 	}
+}
+
+func handleThemes() {
+	_ = theme.LoadExternalThemes()
+	themes := theme.List()
+	fmt.Println("Available Color Themes:")
+	fmt.Println("-----------------------")
+	for _, name := range themes {
+		t := theme.Get(name)
+		swatchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Work.String()))
+		swatch := swatchStyle.Render("■ Work")
+
+		breakStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Break.String()))
+		brk := breakStyle.Render("■ Break")
+
+		accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent.String()))
+		acc := accentStyle.Render("■ Accent")
+
+		fmt.Printf("  %-16s %s  %s  %s  - %s\n", t.Name, swatch, brk, acc, t.Description)
+	}
+}
+
+func handleScreenshotPreview() {
+	previewCmd := flag.NewFlagSet("screenshot-preview", flag.ExitOnError)
+	layoutFlag := previewCmd.String("layout", "monolith", "Layout to render")
+	themeFlag := previewCmd.String("theme", "daily", "Theme to render")
+	effectsFlag := previewCmd.String("effects", "none", "Ambient effect to render")
+	widthFlag := previewCmd.Int("width", 80, "Preview width")
+	heightFlag := previewCmd.Int("height", 24, "Preview height")
+	zenFlag := previewCmd.Bool("zen", false, "Render zen mode")
+
+	if err := previewCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if *widthFlag < 40 || *heightFlag < 10 {
+		fmt.Fprintln(os.Stderr, "Error: preview size must be at least 40x10")
+		os.Exit(1)
+	}
+
+	_ = theme.LoadExternalThemes()
+	resolvedTheme := theme.ResolveThemeName(*themeFlag)
+	resolvedLayout := render.ResolveLayoutName(*layoutFlag)
+	resolvedEffects := render.ResolveEffectsName(*effectsFlag)
+	th := theme.Get(resolvedTheme)
+	frame := render.Frame{Width: *widthFlag, Height: *heightFlag}
+	layoutName, layoutFunc := render.ResolveLayout(resolvedLayout, frame.Width, frame.Height)
+	ds := render.DisplayState{
+		ModeLabel:        "Building",
+		Project:          "PomoGo",
+		Task:             "refine terminal focus",
+		PhaseKind:        timer.PhaseWork,
+		SegmentRemaining: 18*time.Minute + 32*time.Second,
+		BlockRemaining:   2*time.Hour + 12*time.Minute + 9*time.Second,
+		Progress:         0.42,
+		SegmentIndex:     2,
+		SegmentCount:     4,
+		Running:          true,
+		StatusMessage:    "focus · break in 19m",
+		HintsVisibility:  true,
+		ThemeName:        resolvedTheme,
+		LayoutName:       layoutName,
+		Zen:              *zenFlag,
+		GitBranch:        "feature/focus-polish",
+		TmuxSession:      "work",
+	}
+
+	fmt.Print(render.RenderAmbient(resolvedEffects, 42, frame, th, layoutFunc(ds, th, frame)))
+}
+
+func handleRecap() {
+	st, err := store.New(config.DBFilePath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+
+	b, err := st.GetLastBlock()
+	if err != nil {
+		fmt.Println("No completed blocks found.")
+		return
+	}
+
+	modeStr := "Quick Focus"
+	if b.Mode == "deep" {
+		modeStr = "Deep Focus"
+	}
+
+	hrs := b.PlannedSecs / 3600
+	mins := (b.PlannedSecs % 3600) / 60
+	secs := b.PlannedSecs % 60
+	var timeStr string
+	if hrs > 0 {
+		timeStr = fmt.Sprintf("%dh %dm", hrs, mins)
+	} else if mins > 0 {
+		timeStr = fmt.Sprintf("%dm %ds", mins, secs)
+	} else {
+		timeStr = fmt.Sprintf("%ds", secs)
+	}
+
+	statusStr := "Completed"
+	if !b.Completed {
+		statusStr = "Abandoned"
+	}
+
+	fmt.Println("Last Focus Cycle Recap:")
+	fmt.Println("-----------------------")
+	fmt.Printf("  Mode:            %s\n", modeStr)
+	fmt.Printf("  Status:          %s\n", statusStr)
+	fmt.Printf("  Started At:      %s\n", b.StartedAt.Local().Format("2006-01-02 15:04"))
+	fmt.Printf("  Planned Time:    %s\n", timeStr)
+	fmt.Printf("  Pauses Taken:    %d\n", b.Pauses)
 }
 
 func handleStatus() {
@@ -297,12 +428,14 @@ _pomogo() {
     local -a subcmds
     subcmds=(
         'version:Show version information'
-        'config:Manage configuration'
-        'stats:Show focus statistics'
-        'history:Show detailed session history'
-        'status:Show current session status'
-        'completion:Generate shell completions'
-        'help:Show help message'
+		'config:Manage configuration'
+		'stats:Show focus statistics'
+		'history:Show detailed session history'
+		'themes:List color themes'
+		'screenshot-preview:Render a non-interactive terminal preview'
+		'status:Show current session status'
+		'completion:Generate shell completions'
+		'help:Show help message'
     )
     
     _arguments \
@@ -340,7 +473,7 @@ const bashCompletionScript = `_pomogo_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="version config stats history completion help status"
+	opts="version config stats history themes screenshot-preview completion help status"
 
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -370,7 +503,7 @@ complete -F _pomogo_completion pomogo
 `
 
 const fishCompletionScript = `complete -c pomogo -f
-complete -c pomogo -n "not __fish_seen_subcommand_from version config stats history completion help status" -a "version config stats history completion help status"
+complete -c pomogo -n "not __fish_seen_subcommand_from version config stats history themes screenshot-preview completion help status" -a "version config stats history themes screenshot-preview completion help status"
 complete -c pomogo -n "__fish_seen_subcommand_from config" -a "init"
 complete -c pomogo -n "__fish_seen_subcommand_from stats" -l week -d "Show weekly activity"
 complete -c pomogo -n "__fish_seen_subcommand_from stats" -l month -d "Show monthly summary"
@@ -400,15 +533,24 @@ func handleProjects() {
 		listProjects(st)
 	case "add":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: pomogo projects add <name> [color]")
+			fmt.Println("Usage: pomogo projects add <name> [--icon <icon>] [color]")
 			os.Exit(1)
 		}
 		name := os.Args[3]
+		icon := ""
 		color := ""
-		if len(os.Args) >= 5 {
-			color = os.Args[4]
+
+		args := os.Args[4:]
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--icon" && i+1 < len(args) {
+				icon = args[i+1]
+				i++
+			} else if color == "" {
+				color = args[i]
+			}
 		}
-		p := &store.Project{Name: name, Color: color}
+
+		p := &store.Project{Name: name, Color: color, Icon: icon}
 		if err := st.CreateProject(p); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -450,10 +592,16 @@ func listProjects(st *store.Store) {
 		if p.Color != "" {
 			colorSuffix = fmt.Sprintf(" (%s)", p.Color)
 		}
+
+		displayName := p.Name
+		if p.Icon != "" {
+			displayName = p.Icon + " " + p.Name
+		}
+
 		if p.Archived {
-			archived = append(archived, p.Name+colorSuffix)
+			archived = append(archived, displayName+colorSuffix)
 		} else {
-			active = append(active, p.Name+colorSuffix)
+			active = append(active, displayName+colorSuffix)
 		}
 	}
 

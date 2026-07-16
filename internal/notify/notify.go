@@ -7,27 +7,55 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
-// soundEventComplete is the canberra event ID played when a work session ends (entering a break).
-const soundEventComplete = "complete"
+const (
+	defaultSoundStartEvent = "message-new-instant"
+	defaultSoundEndEvent   = "complete"
+)
 
-// soundEventBell is the canberra event ID played when a break ends (entering a work session).
-const soundEventBell = "bell"
+// SoundProfile is a paired set of canberra event IDs for focus transitions.
+type SoundProfile struct {
+	Name        string
+	Description string
+	StartEvent  string
+	EndEvent    string
+}
+
+// SoundProfiles returns curated freedesktop/libcanberra event pairs.
+func SoundProfiles() []SoundProfile {
+	return []SoundProfile{
+		{Name: "soft", Description: "Subtle focus cue and completion chime", StartEvent: "message-new-instant", EndEvent: "complete"},
+		{Name: "bell", Description: "Classic terminal bell cues", StartEvent: "bell", EndEvent: "bell"},
+		{Name: "dialog", Description: "Desktop notification style", StartEvent: "dialog-information", EndEvent: "complete"},
+		{Name: "service", Description: "Login/logout style transitions", StartEvent: "service-login", EndEvent: "service-logout"},
+	}
+}
 
 // Notifier sends system notifications and plays sounds for Pomodoro events.
 type Notifier struct {
-	enabled          bool
-	soundEnabled     bool
-	dbusNotifier     *DBusNotifier
-	customSoundEvent string
+	enabled         bool
+	soundEnabled    bool
+	dbusNotifier    *DBusNotifier
+	soundStartEvent string
+	soundEndEvent   string
 }
 
 // NewNotifier creates a Notifier.
-func NewNotifier(enabled, soundEnabled bool) *Notifier {
+func NewNotifier(enabled, soundEnabled bool, soundEvents ...string) *Notifier {
 	dn, _ := NewDBusNotifier() // Fallback is clean if D-Bus is unavailable
+	startEvent := defaultSoundStartEvent
+	endEvent := defaultSoundEndEvent
+	if len(soundEvents) > 0 && soundEvents[0] != "" {
+		startEvent = soundEvents[0]
+	}
+	if len(soundEvents) > 1 && soundEvents[1] != "" {
+		endEvent = soundEvents[1]
+	}
 	return &Notifier{
-		enabled:      enabled,
-		soundEnabled: soundEnabled,
-		dbusNotifier: dn,
+		enabled:         enabled,
+		soundEnabled:    soundEnabled,
+		dbusNotifier:    dn,
+		soundStartEvent: startEvent,
+		soundEndEvent:   endEvent,
 	}
 }
 
@@ -38,7 +66,30 @@ func (n *Notifier) DBusNotifier() *DBusNotifier {
 
 // SetCustomSoundEvent sets a custom transition sound event name.
 func (n *Notifier) SetCustomSoundEvent(event string) {
-	n.customSoundEvent = event
+	n.SetSoundEvents(event, event)
+}
+
+// SetSoundEvents sets focus-start and focus-end transition sound event names.
+func (n *Notifier) SetSoundEvents(startEvent, endEvent string) {
+	if startEvent != "" {
+		n.soundStartEvent = startEvent
+	}
+	if endEvent != "" {
+		n.soundEndEvent = endEvent
+	}
+}
+
+// SoundEvents returns the configured focus-start and focus-end event IDs.
+func (n *Notifier) SoundEvents() (string, string) {
+	return n.soundStartEvent, n.soundEndEvent
+}
+
+// PreviewSoundEvent plays one event ID without changing the configured profile.
+func (n *Notifier) PreviewSoundEvent(eventID string) {
+	if eventID == "" {
+		return
+	}
+	n.playEvent(eventID)
 }
 
 // NotifyTransition sends a notification and plays a sound on a session transition.
@@ -60,7 +111,7 @@ func (n *Notifier) NotifyTransition(state timer.SessionState, phase timer.Sessio
 		case timer.StateIdle:
 			actions = []string{"start_work", "Start Work"}
 		}
-		
+
 		err := n.dbusNotifier.Send(title, message, urgency, actions)
 		if err == nil {
 			return nil
@@ -104,19 +155,19 @@ func (n *Notifier) playSound(state timer.SessionState) {
 		return
 	}
 	var eventID string
-	if n.customSoundEvent != "" {
-		eventID = n.customSoundEvent
-	} else {
-		switch state {
-		case timer.StateShortBreak, timer.StateLongBreak:
-			eventID = soundEventComplete // work done → entering break
-		case timer.StateWork:
-			eventID = soundEventBell // break done → back to work
-		default:
-			return
-		}
+	switch state {
+	case timer.StateShortBreak, timer.StateLongBreak:
+		eventID = n.soundEndEvent // work done → entering break
+	case timer.StateWork:
+		eventID = n.soundStartEvent // break done → back to work
+	default:
+		return
 	}
 
+	n.playEvent(eventID)
+}
+
+func (n *Notifier) playEvent(eventID string) {
 	path, err := exec.LookPath("canberra-gtk-play")
 	if err != nil {
 		return

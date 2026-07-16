@@ -256,3 +256,78 @@ func TestProjects(t *testing.T) {
 		t.Errorf("expected markdown report title, got:\n%s", mdReport)
 	}
 }
+
+func TestBlocksPersistence(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "pomogo-blocks-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to initialize store: %v", err)
+	}
+	defer st.Close()
+
+	// Create block
+	b := &BlockStore{
+		Mode:        "deep",
+		PlannedSecs: 3600,
+		StartedAt:   time.Now(),
+		Completed:   false,
+		Pauses:      0,
+	}
+	err = st.CreateBlock(b)
+	if err != nil {
+		t.Fatalf("failed to create block: %v", err)
+	}
+	if b.ID == 0 {
+		t.Error("expected non-zero block ID after insertion")
+	}
+
+	// Increment pauses
+	err = st.IncrementBlockPauses(b.ID)
+	if err != nil {
+		t.Fatalf("failed to increment block pauses: %v", err)
+	}
+
+	// Finish block
+	now := time.Now()
+	err = st.FinishBlock(b.ID, true, now)
+	if err != nil {
+		t.Fatalf("failed to finish block: %v", err)
+	}
+
+	// Save session referencing this block
+	sess := &Session{
+		Type:         "work",
+		Task:         "Deep Focus Segment",
+		StartedAt:    now.Add(-25 * time.Minute),
+		EndedAt:      now,
+		Completed:    true,
+		DurationSecs: 1500,
+		Mode:         "deep",
+		BlockID:      &b.ID,
+	}
+	err = st.SaveSession(sess)
+	if err != nil {
+		t.Fatalf("failed to save session referencing block: %v", err)
+	}
+
+	// Fetch sessions and verify
+	sessions, err := st.GetSessions(now.Add(-1*time.Hour), now.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("failed to get sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if *sessions[0].BlockID != b.ID {
+		t.Errorf("got block ID %d, want %d", *sessions[0].BlockID, b.ID)
+	}
+	if sessions[0].Mode != "deep" {
+		t.Errorf("got mode %q, want 'deep'", sessions[0].Mode)
+	}
+}

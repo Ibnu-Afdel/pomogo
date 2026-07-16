@@ -1,0 +1,467 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Ibnu-Afdel/pomogo/internal/notify"
+	"github.com/Ibnu-Afdel/pomogo/internal/restore"
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
+	"github.com/Ibnu-Afdel/pomogo/internal/store"
+	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.zenMode {
+		if m.keymap.Quit.Matches(msg.String()) {
+			m.persistOnQuit()
+			return m, tea.Quit
+		}
+		m.zenMode = false
+		return m, nil
+	}
+
+	if m.restorePending {
+		return m.handleRestorePrompt(msg)
+	}
+
+	if m.showHelp {
+		switch {
+		case m.keymap.Help.Matches(msg.String()) || m.keymap.Back.Matches(msg.String()):
+			m.showHelp = false
+		case m.keymap.Quit.Matches(msg.String()):
+			m.persistOnQuit()
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
+	// 1. Duration Picker Input Mode
+	if m.inputMode == modeDurationPicker {
+		switch {
+		case msg.String() == "q" || msg.String() == "ctrl+c":
+			m.persistOnQuit()
+			return m, tea.Quit
+		case msg.String() == "1", msg.String() == "2", msg.String() == "3", msg.String() == "4":
+			m.selectedDurationIdx = int(msg.String()[0] - '1')
+		case msg.Type == tea.KeyUp || msg.String() == "up" || msg.String() == "k" || msg.String() == "shift+tab":
+			m.selectedDurationIdx--
+			if m.selectedDurationIdx < 0 {
+				m.selectedDurationIdx = 4
+			}
+		case msg.Type == tea.KeyDown || msg.String() == "down" || msg.String() == "j" || msg.Type == tea.KeyTab || msg.String() == "tab":
+			m.selectedDurationIdx++
+			if m.selectedDurationIdx > 4 {
+				m.selectedDurationIdx = 0
+			}
+		case msg.Type == tea.KeyEsc || msg.String() == "esc":
+			m.inputMode = modeNone
+		case msg.Type == tea.KeyEnter || msg.String() == "enter":
+			if m.selectedDurationIdx >= 0 && m.selectedDurationIdx <= 3 {
+				m.deepDuration = time.Duration(m.selectedDurationIdx+1) * time.Hour
+				m.configureDeepFocus(m.deepDuration)
+				m.inputMode = modeNone
+			} else if m.selectedDurationIdx == 4 {
+				m.inputMode = modeCustomDurationInput
+				m.textInput.SetValue("")
+				m.textInput.Placeholder = "e.g., 1h30m, 90m..."
+				m.textInput.Focus()
+			}
+		}
+		return m, nil
+	}
+
+	if m.inputMode == modeSoundPicker {
+		profiles := notify.SoundProfiles()
+		switch {
+		case msg.String() == "q" || msg.String() == "ctrl+c":
+			m.persistOnQuit()
+			return m, tea.Quit
+		case msg.Type == tea.KeyUp || msg.String() == "up" || msg.String() == "k" || msg.String() == "shift+tab":
+			m.selectedSoundIdx--
+			if m.selectedSoundIdx < 0 {
+				m.selectedSoundIdx = len(profiles) - 1
+			}
+		case msg.Type == tea.KeyDown || msg.String() == "down" || msg.String() == "j" || msg.Type == tea.KeyTab || msg.String() == "tab":
+			m.selectedSoundIdx++
+			if m.selectedSoundIdx >= len(profiles) {
+				m.selectedSoundIdx = 0
+			}
+		case msg.Type == tea.KeyEsc || msg.String() == "esc":
+			m.inputMode = modeNone
+		case msg.Type == tea.KeySpace || msg.String() == " ":
+			if m.notifier != nil && m.selectedSoundIdx >= 0 && m.selectedSoundIdx < len(profiles) {
+				m.notifier.PreviewSoundEvent(profiles[m.selectedSoundIdx].StartEvent)
+			}
+		case msg.Type == tea.KeyEnter || msg.String() == "enter":
+			if m.selectedSoundIdx >= 0 && m.selectedSoundIdx < len(profiles) {
+				profile := profiles[m.selectedSoundIdx]
+				m.cfg.SoundStartEvent = profile.StartEvent
+				m.cfg.SoundEndEvent = profile.EndEvent
+				if m.notifier != nil {
+					m.notifier.SetSoundEvents(profile.StartEvent, profile.EndEvent)
+				}
+				m.statusMessage = fmt.Sprintf("Sound: %s", profile.Name)
+				m.inputMode = modeNone
+				return m, m.clearStatusAfter2s()
+			}
+		}
+		return m, nil
+	}
+
+	// 2. Custom Duration Input Mode
+	if m.inputMode == modeCustomDurationInput {
+		switch msg.String() {
+		case "esc":
+			m.inputMode = modeDurationPicker
+		case "enter":
+			val := m.textInput.Value()
+			d, err := parseCustomDuration(val)
+			if err != nil {
+				m.statusMessage = fmt.Sprintf("invalid duration: %v", err)
+				m.inputMode = modeDurationPicker
+				return m, nil
+			}
+			m.deepDuration = d
+			m.configureDeepFocus(m.deepDuration)
+			m.inputMode = modeNone
+		}
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
+	// Idle state mode switches
+	if !m.runner.Timer.IsRunning && !m.runner.Timer.IsPaused {
+		switch msg.String() {
+		case "d":
+			m.inputMode = modeDurationPicker
+			m.selectedDurationIdx = durationIndex(m.cfg.DeepFocusDefaultDurationAsDuration())
+			return m, nil
+		}
+	}
+
+	switch {
+	case m.keymap.Start.Matches(msg.String()):
+		if !m.runner.Timer.IsRunning {
+			if m.selectedMode == session.ModeDeep && m.dbStore != nil {
+				bStore := &store.BlockStore{
+					Mode:        "deep",
+					PlannedSecs: int(m.deepDuration.Seconds()),
+					StartedAt:   time.Now(),
+					Completed:   false,
+				}
+				if err := m.dbStore.CreateBlock(bStore); err == nil {
+					m.currentBlockID = &bStore.ID
+				}
+			}
+
+			if err := m.runner.Start(timer.RealClock{}); err != nil {
+				m.statusMessage = err.Error()
+				return m, nil
+			}
+			m.lastTickTime = time.Now()
+			m.afterTransition(true)
+			return m, m.tick1s()
+		}
+	case m.keymap.PauseResume.Matches(msg.String()):
+		if m.runner.Timer.IsRunning {
+			if m.runner.Timer.IsPaused {
+				if err := m.runner.Timer.Resume(timer.RealClock{}); err != nil {
+					m.statusMessage = err.Error()
+					return m, nil
+				}
+				m.lastTickTime = time.Now()
+				m.afterTransition(false)
+				return m, m.tick1s()
+			} else {
+				if err := m.runner.Timer.Pause(timer.RealClock{}); err != nil {
+					m.statusMessage = err.Error()
+					return m, nil
+				}
+				if m.runner.Block.Mode == session.ModeDeep && m.currentBlockID != nil && m.dbStore != nil {
+					_ = m.dbStore.IncrementBlockPauses(*m.currentBlockID)
+				}
+				m.afterTransition(false)
+			}
+		}
+	case m.keymap.Skip.Matches(msg.String()):
+		if m.runner.Timer.IsRunning || m.runner.Timer.IsPaused {
+			prevPhase := m.runner.Timer.Phase
+			startedAt := m.runner.Timer.StartedAt
+			duration := m.getDurationForPhase()
+			evt, _ := m.runner.Skip(timer.RealClock{})
+
+			m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
+
+			if evt.Type == session.EventBlockEnded {
+				m.finishBlock(false)
+				if m.selectedMode == session.ModeDeep && m.cfg.PromptForNotes {
+					sess := &store.Session{
+						Type:         "work",
+						Task:         m.currentTask,
+						ProjectID:    m.currentProjectID,
+						BlockID:      m.currentBlockID,
+						Mode:         string(m.runner.Block.Mode),
+						Completed:    false,
+						StartedAt:    startedAt,
+						EndedAt:      time.Now(),
+						DurationSecs: int(duration.Seconds()),
+					}
+					m.pendingSession = sess
+					m.inputMode = modeNoteInput
+					m.textInput.SetValue("")
+					m.textInput.Placeholder = "Enter block notes (Enter to skip)..."
+					m.textInput.Focus()
+				} else {
+					m.inputMode = modeRecapScreen
+				}
+			} else if m.selectedMode == session.ModeQuick && prevPhase == timer.PhaseLongBreak {
+				m.inputMode = modeRecapScreen
+			}
+			m.afterTransition(true)
+		}
+	case m.keymap.Task.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeTaskInput
+			m.textInput.SetValue(m.currentTask)
+			m.textInput.Placeholder = "Enter current task..."
+			m.textInput.Focus()
+			m.suggestions = nil
+			if m.dbStore != nil {
+				if list, err := m.dbStore.GetUniqueTasks(m.currentProjectID); err == nil {
+					m.suggestions = list
+				}
+			}
+			m.filteredSuggestions = m.suggestions
+			m.suggestionIndex = -1
+		}
+	case m.keymap.Project.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeProjectInput
+			m.textInput.SetValue(m.currentProjectName)
+			m.textInput.Placeholder = "Enter project name..."
+			m.textInput.Focus()
+			m.suggestions = nil
+			if m.dbStore != nil {
+				if list, err := m.dbStore.GetProjects(); err == nil {
+					var active []string
+					for _, p := range list {
+						if !p.Archived {
+							active = append(active, p.Name)
+						}
+					}
+					m.suggestions = active
+				}
+			}
+			m.filteredSuggestions = m.suggestions
+			m.suggestionIndex = -1
+		}
+	case m.keymap.ToggleStats.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.showStats = !m.showStats
+		}
+	case m.keymap.CopyStats.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			s := m.getStats()
+			summary := fmt.Sprintf("PomoGo Stats - Today: %d sessions (%d mins) | Streak: %d days | Month: %d sessions",
+				s.TodayCount, s.TodayMinutes, s.CurrentStreak, s.MonthCount)
+			m.statusMessage = "Copied stats to clipboard!"
+			return m, tea.Batch(copyOSC52(summary), m.clearStatusAfter2s())
+		}
+	case m.keymap.Reset.Matches(msg.String()):
+		m.runner.Timer.Reset()
+		m.finishBlock(false)
+		m.removeState()
+	case m.keymap.Quit.Matches(msg.String()):
+		m.persistOnQuit()
+		return m, tea.Quit
+	case m.keymap.Help.Matches(msg.String()):
+		m.showHelp = true
+	case m.keymap.CycleTheme.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.cycleTheme()
+			m.statusMessage = fmt.Sprintf("Theme: %s", m.currentThemeName)
+			return m, m.clearStatusAfter2s()
+		}
+	case m.keymap.CycleLayout.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.cycleLayout()
+			m.statusMessage = fmt.Sprintf("Layout: %s", m.currentLayoutName)
+			return m, m.clearStatusAfter2s()
+		}
+	case m.keymap.SoundPicker.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.inputMode = modeSoundPicker
+			m.selectedSoundIdx = m.soundProfileIndex()
+			return m, nil
+		}
+	case m.keymap.ToggleZen.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.zenMode = !m.zenMode
+			return m, nil
+		}
+	case m.keymap.CycleEffects.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.cycleEffects()
+			m.statusMessage = fmt.Sprintf("Effects: %s", m.currentEffectsName)
+			return m, m.clearStatusAfter2s()
+		}
+	case m.keymap.CycleVerb.Matches(msg.String()):
+		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
+			m.cycleVerbLabel()
+			m.statusMessage = fmt.Sprintf("Activity: %s", m.currentVerbLabel)
+			return m, m.clearStatusAfter2s()
+		}
+	case m.keymap.Back.Matches(msg.String()):
+		if m.showStats {
+			m.showStats = false
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) configureDeepFocus(d time.Duration) {
+	block := session.NewDeepBlock(
+		d,
+		m.cfg.DeepFocusWorkDurationAsDuration(),
+		m.cfg.DeepFocusShortBreakDurationAsDuration(),
+		m.cfg.DeepFocusLongBreakDurationAsDuration(),
+		m.cfg.DeepFocusSessionsBeforeLongBreak(),
+		true,
+	)
+	m.runner = session.NewRunner(block)
+	m.selectedMode = session.ModeDeep
+	m.deepDuration = d
+	m.statusMessage = fmt.Sprintf(
+		"Deep Focus: %d min block · %dm/%dm/%dm rhythm",
+		int(d.Minutes()),
+		int(m.cfg.DeepFocusWorkDurationAsDuration().Minutes()),
+		int(m.cfg.DeepFocusShortBreakDurationAsDuration().Minutes()),
+		int(m.cfg.DeepFocusLongBreakDurationAsDuration().Minutes()),
+	)
+}
+
+func (m *Model) soundProfileIndex() int {
+	profiles := notify.SoundProfiles()
+	for i, profile := range profiles {
+		if profile.StartEvent == m.cfg.SoundStartEvent && profile.EndEvent == m.cfg.SoundEndEvent {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		runner, err := restore.RestoreRunnerWithDurations(restore.Durations{
+			QuickWork:                    m.cfg.QuickFocusWorkDurationAsDuration(),
+			QuickShortBreak:              m.cfg.QuickFocusShortBreakDurationAsDuration(),
+			QuickLongBreak:               m.cfg.QuickFocusLongBreakDurationAsDuration(),
+			QuickSessionsBeforeLongBreak: m.cfg.QuickFocusSessionsBeforeLongBreak(),
+			QuickAutoAdvance:             m.cfg.QuickFocusAutoAdvance(),
+			DeepWork:                     m.cfg.DeepFocusWorkDurationAsDuration(),
+			DeepShortBreak:               m.cfg.DeepFocusShortBreakDurationAsDuration(),
+			DeepLongBreak:                m.cfg.DeepFocusLongBreakDurationAsDuration(),
+			DeepSessionsBeforeLongBreak:  m.cfg.DeepFocusSessionsBeforeLongBreak(),
+		})
+		if err != nil {
+			m.restorePending = false
+			m.statusMessage = fmt.Sprintf("restore failed: %v", err)
+			return m, nil
+		}
+		if m.stateManager != nil {
+			if st, err := m.stateManager.Read(); err == nil && st != nil {
+				m.currentTask = st.Task
+				m.currentVerbLabel = GetVerbForTask(st.Task)
+				m.currentProjectID = st.ProjectID
+				m.currentProjectName = st.ProjectName
+				m.currentProjectIcon = ""
+				if m.dbStore != nil && st.ProjectName != "" {
+					if p, err := m.dbStore.GetProjectByName(st.ProjectName); err == nil && p != nil {
+						m.currentProjectIcon = p.Icon
+					}
+				}
+				if st.BlockID > 0 {
+					id := st.BlockID
+					m.currentBlockID = &id
+				}
+			}
+		}
+		m.runner = runner
+		m.selectedMode = runner.Block.Mode
+		m.restorePending = false
+		m.afterTransition(false)
+		if m.runner.Timer.IsPaused {
+			return m, nil
+		}
+		return m, m.tick1s()
+	case "n", "N", "esc":
+		m.restorePending = false
+		m.runner.Timer.State = timer.StateIdle
+		m.runner.Timer.Phase = timer.PhaseWork
+		m.runner.Timer.IsRunning = false
+		m.runner.Timer.IsPaused = false
+		m.writeState()
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *Model) finishBlock(completed bool) {
+	if m.runner.Block.Mode == session.ModeDeep && m.currentBlockID != nil && m.dbStore != nil {
+		_ = m.dbStore.FinishBlock(*m.currentBlockID, completed, time.Now())
+	}
+}
+
+func parseCustomDuration(val string) (time.Duration, error) {
+	val = strings.TrimSpace(strings.ToLower(val))
+	if val == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	d, err := time.ParseDuration(val)
+	if err == nil {
+		return d, nil
+	}
+	var mins int
+	if _, err := fmt.Sscanf(val, "%d", &mins); err == nil {
+		return time.Duration(mins) * time.Minute, nil
+	}
+	return 0, fmt.Errorf("invalid duration format")
+}
+
+func durationIndex(d time.Duration) int {
+	for i := 0; i < 4; i++ {
+		if d == time.Duration(i+1)*time.Hour {
+			return i
+		}
+	}
+	return 4
+}
+
+func (m *Model) filterSuggestions() {
+	val := strings.ToLower(strings.TrimSpace(m.textInput.Value()))
+	if val == "" {
+		m.filteredSuggestions = m.suggestions
+	} else {
+		var filtered []string
+		for _, s := range m.suggestions {
+			if strings.Contains(strings.ToLower(s), val) {
+				filtered = append(filtered, s)
+			}
+		}
+		m.filteredSuggestions = filtered
+	}
+
+	if m.suggestionIndex >= len(m.filteredSuggestions) {
+		m.suggestionIndex = len(m.filteredSuggestions) - 1
+	}
+	if m.suggestionIndex < -1 {
+		m.suggestionIndex = -1
+	}
+}

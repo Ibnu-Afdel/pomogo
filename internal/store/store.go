@@ -23,6 +23,8 @@ type Session struct {
 	DurationSecs int
 	ProjectID    *int64    // Optional project ID
 	ProjectName  string    // Resolved project name
+	Mode         string    // "quick", "deep"
+	BlockID      *int64    // Block reference
 }
 
 // Project represents a user category/project for focus sessions.
@@ -31,6 +33,18 @@ type Project struct {
 	Name     string
 	Color    string
 	Archived bool
+	Icon     string
+}
+
+// BlockStore represents a deep focus block.
+type BlockStore struct {
+	ID          int64
+	Mode        string
+	PlannedSecs int
+	StartedAt   time.Time
+	EndedAt     time.Time
+	Completed   bool
+	Pauses      int
 }
 
 // Store wraps the SQL database connection.
@@ -77,8 +91,8 @@ func (s *Store) Close() error {
 
 // SaveSession inserts a new focus session record.
 func (s *Store) SaveSession(sess *Session) error {
-	query := `INSERT INTO sessions (type, task, note, started_at, ended_at, completed, duration_secs, project_id)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sessions (type, task, note, started_at, ended_at, completed, duration_secs, project_id, mode, block_id)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	
 	completedInt := 0
 	if sess.Completed {
@@ -90,7 +104,12 @@ func (s *Store) SaveSession(sess *Session) error {
 		projectIDVal = *sess.ProjectID
 	}
 
-	res, err := s.db.Exec(query, sess.Type, sess.Task, sess.Note, sess.StartedAt, sess.EndedAt, completedInt, sess.DurationSecs, projectIDVal)
+	var blockIDVal interface{}
+	if sess.BlockID != nil {
+		blockIDVal = *sess.BlockID
+	}
+
+	res, err := s.db.Exec(query, sess.Type, sess.Task, sess.Note, sess.StartedAt, sess.EndedAt, completedInt, sess.DurationSecs, projectIDVal, sess.Mode, blockIDVal)
 	if err != nil {
 		return fmt.Errorf("failed to insert session: %w", err)
 	}
@@ -105,7 +124,7 @@ func (s *Store) SaveSession(sess *Session) error {
 
 // GetSessions returns sessions in the specified date range.
 func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
-	query := `SELECT s.id, s.type, s.task, s.note, s.started_at, s.ended_at, s.completed, s.duration_secs, s.project_id, p.name 
+	query := `SELECT s.id, s.type, s.task, s.note, s.started_at, s.ended_at, s.completed, s.duration_secs, s.project_id, p.name, s.mode, s.block_id 
 	          FROM sessions s
 	          LEFT JOIN projects p ON s.project_id = p.id
 	          WHERE s.started_at >= ? AND s.started_at <= ?
@@ -125,7 +144,9 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 		var noteNull sql.NullString
 		var projectIDNull sql.NullInt64
 		var projectNameNull sql.NullString
-		err := rows.Scan(&sess.ID, &sess.Type, &taskNull, &noteNull, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs, &projectIDNull, &projectNameNull)
+		var modeNull sql.NullString
+		var blockIDNull sql.NullInt64
+		err := rows.Scan(&sess.ID, &sess.Type, &taskNull, &noteNull, &sess.StartedAt, &sess.EndedAt, &completedInt, &sess.DurationSecs, &projectIDNull, &projectNameNull, &modeNull, &blockIDNull)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
@@ -143,6 +164,13 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 		if projectNameNull.Valid {
 			sess.ProjectName = projectNameNull.String
 		}
+		if modeNull.Valid {
+			sess.Mode = modeNull.String
+		}
+		if blockIDNull.Valid {
+			id := blockIDNull.Int64
+			sess.BlockID = &id
+		}
 		sessions = append(sessions, &sess)
 	}
 
@@ -155,13 +183,13 @@ func (s *Store) GetSessions(start, end time.Time) ([]*Session, error) {
 
 // CreateProject inserts a new project record.
 func (s *Store) CreateProject(p *Project) error {
-	query := `INSERT INTO projects (name, color, archived) VALUES (?, ?, ?)`
+	query := `INSERT INTO projects (name, color, archived, icon) VALUES (?, ?, ?, ?)`
 	archivedInt := 0
 	if p.Archived {
 		archivedInt = 1
 	}
 
-	res, err := s.db.Exec(query, p.Name, p.Color, archivedInt)
+	res, err := s.db.Exec(query, p.Name, p.Color, archivedInt, p.Icon)
 	if err != nil {
 		return fmt.Errorf("failed to insert project: %w", err)
 	}
@@ -176,10 +204,10 @@ func (s *Store) CreateProject(p *Project) error {
 
 // GetProjectByName retrieves a project by its name.
 func (s *Store) GetProjectByName(name string) (*Project, error) {
-	query := `SELECT id, name, color, archived FROM projects WHERE name = ?`
+	query := `SELECT id, name, color, archived, icon FROM projects WHERE name = ?`
 	var p Project
 	var archivedInt int
-	err := s.db.QueryRow(query, name).Scan(&p.ID, &p.Name, &p.Color, &archivedInt)
+	err := s.db.QueryRow(query, name).Scan(&p.ID, &p.Name, &p.Color, &archivedInt, &p.Icon)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +217,7 @@ func (s *Store) GetProjectByName(name string) (*Project, error) {
 
 // GetProjects returns all projects.
 func (s *Store) GetProjects() ([]*Project, error) {
-	query := `SELECT id, name, color, archived FROM projects ORDER BY name ASC`
+	query := `SELECT id, name, color, archived, icon FROM projects ORDER BY name ASC`
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query projects: %w", err)
@@ -200,7 +228,7 @@ func (s *Store) GetProjects() ([]*Project, error) {
 	for rows.Next() {
 		var p Project
 		var archivedInt int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Color, &archivedInt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Color, &archivedInt, &p.Icon); err != nil {
 			return nil, err
 		}
 		p.Archived = archivedInt == 1
@@ -291,6 +319,18 @@ func (s *Store) runMigrations() error {
 			archived INTEGER NOT NULL DEFAULT 0
 		);`,
 		`ALTER TABLE sessions ADD COLUMN project_id INTEGER REFERENCES projects(id);`,
+		`CREATE TABLE IF NOT EXISTS blocks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			mode TEXT NOT NULL,
+			planned_secs INTEGER NOT NULL,
+			started_at DATETIME NOT NULL,
+			ended_at DATETIME,
+			completed INTEGER NOT NULL,
+			pauses INTEGER DEFAULT 0
+		);`,
+		`ALTER TABLE sessions ADD COLUMN mode TEXT;`,
+		`ALTER TABLE sessions ADD COLUMN block_id INTEGER REFERENCES blocks(id);`,
+		`ALTER TABLE projects ADD COLUMN icon TEXT DEFAULT '';`,
 	}
 
 	for i, query := range migrations {
@@ -327,4 +367,55 @@ func (s *Store) runMigrations() error {
 	}
 
 	return nil
+}
+
+// CreateBlock inserts a new block record.
+func (s *Store) CreateBlock(b *BlockStore) error {
+	query := `INSERT INTO blocks (mode, planned_secs, started_at, completed, pauses) VALUES (?, ?, ?, ?, ?)`
+	completedInt := 0
+	if b.Completed {
+		completedInt = 1
+	}
+	res, err := s.db.Exec(query, b.Mode, b.PlannedSecs, b.StartedAt, completedInt, b.Pauses)
+	if err != nil {
+		return fmt.Errorf("failed to insert block: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err == nil {
+		b.ID = id
+	}
+	return nil
+}
+
+// FinishBlock updates the block record at completion.
+func (s *Store) FinishBlock(id int64, completed bool, endedAt time.Time) error {
+	query := `UPDATE blocks SET completed = ?, ended_at = ? WHERE id = ?`
+	completedInt := 0
+	if completed {
+		completedInt = 1
+	}
+	_, err := s.db.Exec(query, completedInt, endedAt, id)
+	return err
+}
+
+// IncrementBlockPauses increments the pauses counter of a block.
+func (s *Store) IncrementBlockPauses(id int64) error {
+	query := `UPDATE blocks SET pauses = pauses + 1 WHERE id = ?`
+	_, err := s.db.Exec(query, id)
+	return err
+}
+
+// GetLastBlock retrieves the most recently created block.
+func (s *Store) GetLastBlock() (*BlockStore, error) {
+	row := s.db.QueryRow("SELECT id, mode, planned_secs, started_at, ended_at, completed, pauses FROM blocks ORDER BY id DESC LIMIT 1")
+	var b BlockStore
+	var endedAt sql.NullTime
+	err := row.Scan(&b.ID, &b.Mode, &b.PlannedSecs, &b.StartedAt, &endedAt, &b.Completed, &b.Pauses)
+	if err != nil {
+		return nil, err
+	}
+	if endedAt.Valid {
+		b.EndedAt = endedAt.Time
+	}
+	return &b, nil
 }

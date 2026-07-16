@@ -1,0 +1,48 @@
+# PomoGo Custom Theme Example
+# Place this file in ~/.config/pomogo/themes/example.toml
+
+# Theme display name
+name = "neon-glow"
+
+# Description shown in the list
+description = "A dark cyberpunk theme with neon violet accents."
+
+# Hex colors for each role:
+# Primary color for work sessions
+work = "#ff007f"
+
+# Primary color for break sessions
+break = "#00f0ff"
+
+# Primary color for long breaks
+long-break = "#00ff66"
+
+# Color for the idle state
+idle = "#707070"
+
+# Accent highlights
+accent = "#bd93f9"
+
+# Main terminal background (will be used to set terminal background where supported)
+background = "#0d0e15"
+
+# Primary text color
+text = "#f8f8f2"
+
+# Muted/secondary text color
+muted = "#6272a4"
+
+# Subtle background box/panel color
+subtle = "#1c1e27"
+
+# Border line color
+border = "#3d425c"
+
+# Completed portion of progress bar
+progress-fill = "#ff007f"
+
+# Uncompleted portion track
+progress-track = "#111216"
+
+# Extremely muted color for effects/backgrounds
+ambient = "#0f101a"

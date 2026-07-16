@@ -147,3 +147,29 @@ func TestFormatStatus_Paused(t *testing.T) {
 		t.Errorf("expected class 'pomogo-paused', got %q", waybar.Class)
 	}
 }
+
+func TestFormatStatus_DeepMode(t *testing.T) {
+	now := time.Now()
+	state := &statefile.State{
+		SessionState:       "work",
+		SessionType:        "work",
+		EndsAt:             now.Add(15 * time.Minute).Unix(),
+		Paused:             false,
+		RemainingSecs:      900,
+		PID:                os.Getpid(),
+		SessionCount:       2,
+		UpdatedAt:          now.Unix(),
+		StartedAt:          now.Unix(),
+		TotalSecs:          1500,
+		Mode:               "deep",
+		BlockRemainingSecs: 3600 + 15*60 + 21, // 1h 15m 21s
+	}
+
+	res, err := FormatStatus(state, "tmux")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != "🍅 1:15:21" {
+		t.Errorf("expected '🍅 1:15:21', got %q", res)
+	}
+}

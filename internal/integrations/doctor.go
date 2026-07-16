@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
+	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/godbus/dbus/v5"
 )
 
@@ -119,6 +121,17 @@ func RunDoctor() []Diagnostic {
 		soundDiag.Message = "canberra-gtk-play not found in PATH (transition sounds will be disabled)"
 	}
 	diagnostics = append(diagnostics, soundDiag)
+
+	// 8. External Themes Check
+	themeDiag := Diagnostic{Name: "External Themes", Passed: true, Message: "All external themes loaded successfully"}
+	if malformed := theme.CheckExternalThemes(); len(malformed) > 0 {
+		themeDiag.Passed = false
+		themeDiag.Message = fmt.Sprintf("Malformed theme files found: %s", strings.Join(malformed, ", "))
+	} else if lowContrast := theme.CheckExternalThemeContrast(); len(lowContrast) > 0 {
+		themeDiag.Passed = false
+		themeDiag.Message = fmt.Sprintf("Low-contrast theme files found: %s", strings.Join(lowContrast, ", "))
+	}
+	diagnostics = append(diagnostics, themeDiag)
 
 	return diagnostics
 }

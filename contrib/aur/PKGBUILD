@@ -1,0 +1,20 @@
+# Maintainer: Ibnu Afdel <ibnu@example.com>
+pkgname=pomogo-bin
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="A beautiful terminal deep-work companion for developers."
+arch=('x86_64' 'aarch64')
+url="https://github.com/Ibnu-Afdel/pomogo"
+license=('MIT')
+depends=('libcanberra')
+provides=('pomogo')
+conflicts=('pomogo')
+source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::https://github.com/Ibnu-Afdel/pomogo/releases/download/v${pkgver}/pomogo-${pkgver}-linux-amd64.tar.gz")
+source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::https://github.com/Ibnu-Afdel/pomogo/releases/download/v${pkgver}/pomogo-${pkgver}-linux-arm64.tar.gz")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  install -Dm755 "${srcdir}/pomogo" "${pkgdir}/usr/bin/pomogo"
+  install -Dm644 "${srcdir}/README.md" "${pkgdir}/usr/share/doc/pomogo/README.md"
+}

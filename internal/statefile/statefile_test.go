@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
@@ -38,10 +39,11 @@ func TestWrite(t *testing.T) {
 	}
 	defer manager.Remove()
 
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
 
-	err = manager.Write(session, "", nil, "")
+	err = manager.Write(runner, "", nil, "")
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
@@ -63,9 +65,10 @@ func TestRead(t *testing.T) {
 	defer manager.Remove()
 
 	// Write initial state
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -83,6 +86,32 @@ func TestRead(t *testing.T) {
 	}
 	if state.PID != os.Getpid() {
 		t.Errorf("PID = %d, want %d", state.PID, os.Getpid())
+	}
+}
+
+func TestWriteWithBlockID(t *testing.T) {
+	useTempRuntimeDir(t)
+	manager, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer manager.Remove()
+
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	blockID := int64(42)
+
+	if err := manager.Write(runner, "Deep Task", nil, "Deep Project", &blockID); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	state, err := manager.Read()
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if state.BlockID != blockID {
+		t.Errorf("BlockID = %d, want %d", state.BlockID, blockID)
 	}
 }
 
@@ -115,9 +144,10 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Write state
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -266,11 +296,12 @@ func TestAtomicWrite(t *testing.T) {
 	}
 	defer manager.Remove()
 
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
 
 	// Write should not leave temp files
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -290,12 +321,13 @@ func TestRoundtrip(t *testing.T) {
 	}
 	defer manager.Remove()
 
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
-	session.SessionCount = 3
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	runner.Timer.SessionCount = 3
 
 	// Write
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -325,12 +357,13 @@ func BenchmarkWrite(b *testing.B) {
 	}
 	defer manager.Remove()
 
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = manager.Write(session, "", nil, "")
+		_ = manager.Write(runner, "", nil, "")
 	}
 }
 
@@ -343,9 +376,10 @@ func BenchmarkRead(b *testing.B) {
 	}
 	defer manager.Remove()
 
-	session := timer.NewSession(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
-	session.Start(timer.RealClock{})
-	if err := manager.Write(session, "", nil, ""); err != nil {
+	block := session.NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, false)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	if err := manager.Write(runner, "", nil, ""); err != nil {
 		b.Fatalf("Write failed: %v", err)
 	}
 

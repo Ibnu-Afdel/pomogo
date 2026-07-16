@@ -190,3 +190,24 @@ func TestCalculate(t *testing.T) {
 		})
 	}
 }
+
+func TestCalculateFocusScore(t *testing.T) {
+	tests := []struct {
+		pauses    int
+		skipped   int
+		abandoned int
+		want      int
+	}{
+		{0, 0, 0, 10},
+		{1, 1, 1, 6},
+		{2, 3, 2, 1}, // 10 - 2 - 3 - 4 = 1 (capped at 1)
+		{0, 0, 10, 1}, // capped at 1
+	}
+
+	for _, tt := range tests {
+		got := CalculateFocusScore(tt.pauses, tt.skipped, tt.abandoned)
+		if got != tt.want {
+			t.Errorf("CalculateFocusScore(%d, %d, %d) = %d, want %d", tt.pauses, tt.skipped, tt.abandoned, got, tt.want)
+		}
+	}
+}

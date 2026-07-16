@@ -2,44 +2,26 @@
 package ui
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
-	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
+	"github.com/Ibnu-Afdel/pomogo/internal/devinfo"
 	"github.com/Ibnu-Afdel/pomogo/internal/notify"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/statefile"
 	"github.com/Ibnu-Afdel/pomogo/internal/stats"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	"github.com/Ibnu-Afdel/pomogo/internal/ui/screens"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
-
-// bigDigits[d][row] is row `row` of digit `d`. Each row is exactly 4 visible chars.
-var bigDigits = [10][5]string{
-	{" ██ ", "█  █", "█  █", "█  █", " ██ "}, // 0
-	{"  █ ", "  █ ", "  █ ", "  █ ", "  █ "}, // 1
-	{" ██ ", "   █", " ██ ", "█   ", "████"}, // 2
-	{" ██ ", "   █", " ██ ", "   █", " ██ "}, // 3
-	{"█  █", "█  █", "████", "   █", "   █"}, // 4
-	{"████", "█   ", "███ ", "   █", "███ "}, // 5
-	{" ██ ", "█   ", "███ ", "█  █", " ██ "}, // 6
-	{"████", "  █ ", " █  ", " █  ", " █  "}, // 7
-	{" ██ ", "█  █", " ██ ", "█  █", " ██ "}, // 8
-	{" ██ ", "█  █", " ███", "   █", " ██ "}, // 9
-}
-
-// bigColon[row] is row `row` of the ":" separator. Each row is exactly 2 visible chars.
-var bigColon = [5]string{"  ", " ●", "  ", " ●", "  "}
 
 type inputModeType int
 
@@ -48,15 +30,20 @@ const (
 	modeTaskInput
 	modeNoteInput
 	modeProjectInput
+	modeDurationPicker
+	modeCustomDurationInput
+	modeSoundPicker
+	modeRecapScreen
 )
 
 // Model is the main Bubble Tea model for the PomoGo TUI.
 type Model struct {
-	session *timer.Session
-	cfg     *config.Config
-	theme   *theme.Theme
-	width   int
-	height  int
+	runner *session.Runner
+	cfg    *config.Config
+	theme  *theme.Theme
+	width  int
+	height int
+	keymap KeyMap
 
 	notifier       *notify.Notifier
 	stateManager   *statefile.Manager
@@ -65,23 +52,48 @@ type Model struct {
 	showHelp       bool
 	statusMessage  string
 
-	textInput      textinput.Model
-	inputMode      inputModeType
-	currentTask        string
-	pendingSession     *store.Session
-	showStats          bool
-	lastTickTime       time.Time
-	currentProjectID   *int64
-	currentProjectName string
-	suggestions        []string
+	textInput           textinput.Model
+	inputMode           inputModeType
+	currentTask         string
+	pendingSession      *store.Session
+	showStats           bool
+	lastTickTime        time.Time
+	currentProjectID    *int64
+	currentProjectName  string
+	suggestions         []string
 	filteredSuggestions []string
-	suggestionIndex    int
-	lastHookState      timer.SessionState
+	suggestionIndex     int
+	lastHookState       timer.SessionState
+
+	// Mode selection fields
+	selectedMode        session.Mode
+	selectedDurationIdx int
+	selectedSoundIdx    int
+	deepDuration        time.Duration
+	currentBlockID      *int64
+
+	// Theme & Layout fields
+	currentThemeName   string
+	currentLayoutName  string
+	currentEffectsName string
+	zenMode            bool
+	tickCount          int
+	currentProjectIcon string
+	currentVerbLabel   string
+	gitBranch          string
+	tmuxSession        string
 }
 
 // NewModel creates a new TUI model.
 func NewModel(cfg *config.Config) *Model {
-	th := theme.Get(cfg.Theme)
+	// Load external themes first so they are available in theme selection/resolution
+	_ = theme.LoadExternalThemes()
+
+	resolvedTheme := theme.ResolveThemeName(cfg.Theme)
+	resolvedLayout := render.ResolveLayoutName(cfg.Layout)
+	resolvedEffects := render.ResolveEffectsName(cfg.Effects)
+
+	th := theme.Get(resolvedTheme)
 	manager, _ := statefile.NewManager()
 	st, err := store.New(config.DBFilePath())
 	var statusMsg string
@@ -103,27 +115,52 @@ func NewModel(cfg *config.Config) *Model {
 	ti := textinput.New()
 	ti.Width = 30
 
+	var gitBranch string
+	var tmuxSession string
+	if cfg.ShowGit {
+		cwd, _ := os.Getwd()
+		gitBranch = devinfo.FindGitBranch(cwd)
+	}
+	if cfg.ShowTmux {
+		tmuxSession = devinfo.GetTmuxSession()
+	}
+
+	block := session.NewQuickBlock(
+		cfg.QuickFocusWorkDurationAsDuration(),
+		cfg.QuickFocusShortBreakDurationAsDuration(),
+		cfg.QuickFocusLongBreakDurationAsDuration(),
+		cfg.QuickFocusSessionsBeforeLongBreak(),
+		cfg.QuickFocusAutoAdvance(),
+	)
+
 	return &Model{
-		session: timer.NewSession(
-			cfg.WorkDurationAsDuration(),
-			cfg.ShortBreakDurationAsDuration(),
-			cfg.LongBreakDurationAsDuration(),
-			cfg.SessionsBeforeLongBreak,
-		),
-		cfg:                cfg,
-		theme:              th,
-		width:              80,
-		height:             24,
-		notifier:           notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled),
-		stateManager:       manager,
-		dbStore:            st,
-		restorePending:     restore.CanRestore(),
-		statusMessage:      statusMsg,
-		textInput:          ti,
-		inputMode:          modeNone,
-		currentTask:        task,
-		currentProjectID:   projectID,
-		currentProjectName: projectName,
+		runner:              session.NewRunner(block),
+		cfg:                 cfg,
+		theme:               th,
+		width:               80,
+		height:              24,
+		keymap:              DefaultKeyMap,
+		notifier:            notify.NewNotifier(cfg.NotificationsEnabled, cfg.SoundEnabled, cfg.SoundStartEvent, cfg.SoundEndEvent),
+		stateManager:        manager,
+		dbStore:             st,
+		restorePending:      restore.CanRestore(),
+		statusMessage:       statusMsg,
+		textInput:           ti,
+		inputMode:           modeNone,
+		currentTask:         task,
+		currentProjectID:    projectID,
+		currentProjectName:  projectName,
+		selectedMode:        session.ModeQuick,
+		selectedDurationIdx: 0,
+		deepDuration:        cfg.DeepFocusDefaultDurationAsDuration(),
+		currentThemeName:    resolvedTheme,
+		currentLayoutName:   resolvedLayout,
+		currentEffectsName:  resolvedEffects,
+		zenMode:             false,
+		tickCount:           0,
+		currentVerbLabel:    "Focusing",
+		gitBranch:           gitBranch,
+		tmuxSession:         tmuxSession,
 	}
 }
 
@@ -133,599 +170,155 @@ func (m *Model) Init() tea.Cmd {
 		tea.EnterAltScreen,
 		tea.EnableMouseCellMotion,
 		m.listenForDbusActions(),
+		m.tick1s(),
 	)
-}
-
-// Update handles messages and updates the model (required by tea.Model).
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-	case tickMsg:
-		now := time.Now()
-		// 1. Suspend check
-		if m.cfg.PauseOnSuspend && !m.lastTickTime.IsZero() && m.session.IsRunning && !m.session.IsPaused {
-			elapsed := now.Sub(m.lastTickTime)
-			if elapsed > 5*time.Second {
-				m.session.Pause(timer.RealClock{})
-				m.writeState()
-				if m.notifier != nil {
-					_ = m.notifier.NotifyCustom("PomoGo Resume", "Timer paused due to system suspend.", "normal")
-				}
-			}
-		}
-		m.lastTickTime = now
-
-		// 2. Lock check
-		if m.cfg.PauseOnLock && m.session.IsRunning && !m.session.IsPaused {
-			if locked, err := integrations.IsSessionLocked(); err == nil && locked {
-				m.session.Pause(timer.RealClock{})
-				m.writeState()
-				if m.notifier != nil {
-					_ = m.notifier.NotifyCustom("PomoGo Locked", "Timer paused due to screen lock.", "normal")
-				}
-			}
-		}
-
-		// 3. Update terminal title
-		var titleCmd tea.Cmd
-		if m.cfg.TerminalTitleEnabled {
-			titleCmd = m.updateTerminalTitle()
-		}
-
-		if m.session.IsRunning && !m.session.IsPaused {
-			prevPhase := m.session.Phase
-			startedAt := m.session.StartedAt
-			duration := m.getDurationForPhase()
-
-			if m.session.Tick(timer.RealClock{}) {
-				m.recordSession(prevPhase, startedAt, time.Now(), true, duration)
-				m.afterTransition(true)
-				return m, titleCmd
-			}
-		}
-
-		var tickCmd tea.Cmd
-		if m.session.IsRunning && !m.session.IsPaused {
-			tickCmd = m.tick1s()
-		}
-		return m, tea.Batch(titleCmd, tickCmd)
-	}
-
-	if m.inputMode != modeNone {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "esc":
-				if m.inputMode == modeNoteInput && m.pendingSession != nil {
-					if err := m.dbStore.SaveSession(m.pendingSession); err != nil {
-						m.statusMessage = fmt.Sprintf("database error: %v", err)
-					}
-					m.pendingSession = nil
-				}
-				m.inputMode = modeNone
-				m.textInput.Blur()
-				return m, nil
-			case "down":
-				if m.inputMode == modeTaskInput || m.inputMode == modeProjectInput {
-					if len(m.filteredSuggestions) > 0 {
-						m.suggestionIndex++
-						if m.suggestionIndex >= len(m.filteredSuggestions) {
-							m.suggestionIndex = len(m.filteredSuggestions) - 1
-						}
-						return m, nil
-					}
-				}
-			case "up":
-				if m.inputMode == modeTaskInput || m.inputMode == modeProjectInput {
-					m.suggestionIndex--
-					if m.suggestionIndex < -1 {
-						m.suggestionIndex = -1
-					}
-					return m, nil
-				}
-			case "tab":
-				if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && m.suggestionIndex >= 0 {
-					m.textInput.SetValue(m.filteredSuggestions[m.suggestionIndex])
-					m.suggestionIndex = -1
-					m.filterSuggestions()
-					return m, nil
-				}
-			case "ctrl+d":
-				if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && m.suggestionIndex >= 0 && m.suggestionIndex < len(m.filteredSuggestions) {
-					item := m.filteredSuggestions[m.suggestionIndex]
-					if m.inputMode == modeTaskInput {
-						_ = m.dbStore.DeleteTaskName(item, m.currentProjectID)
-						if list, err := m.dbStore.GetUniqueTasks(m.currentProjectID); err == nil {
-							m.suggestions = list
-						}
-					} else {
-						_ = m.dbStore.ArchiveProject(item)
-						if list, err := m.dbStore.GetProjects(); err == nil {
-							var active []string
-							for _, p := range list {
-								if !p.Archived {
-									active = append(active, p.Name)
-								}
-							}
-							m.suggestions = active
-						}
-					}
-					m.suggestionIndex = -1
-					m.filterSuggestions()
-					return m, nil
-				}
-			case "enter":
-				val := strings.TrimSpace(m.textInput.Value())
-				if m.suggestionIndex >= 0 && m.suggestionIndex < len(m.filteredSuggestions) {
-					val = m.filteredSuggestions[m.suggestionIndex]
-				}
-
-				if m.inputMode == modeTaskInput {
-					m.currentTask = val
-				} else if m.inputMode == modeNoteInput && m.pendingSession != nil {
-					m.pendingSession.Note = val
-					if err := m.dbStore.SaveSession(m.pendingSession); err != nil {
-						m.statusMessage = fmt.Sprintf("database error: %v", err)
-					}
-					m.pendingSession = nil
-				} else if m.inputMode == modeProjectInput {
-					if val == "" {
-						m.currentProjectID = nil
-						m.currentProjectName = ""
-					} else {
-						if m.dbStore != nil {
-							p, err := m.dbStore.GetProjectByName(val)
-							if err != nil {
-								p = &store.Project{Name: val}
-								if err := m.dbStore.CreateProject(p); err == nil {
-									m.currentProjectID = &p.ID
-									m.currentProjectName = p.Name
-								} else {
-									m.statusMessage = fmt.Sprintf("database error: %v", err)
-								}
-							} else {
-								if p.Archived {
-									_ = m.dbStore.UnarchiveProject(p.Name)
-								}
-								m.currentProjectID = &p.ID
-								m.currentProjectName = p.Name
-							}
-						} else {
-							m.currentProjectName = val
-						}
-					}
-				}
-				m.inputMode = modeNone
-				m.textInput.Blur()
-				m.writeState()
-				return m, nil
-			}
-		}
-		var cmd tea.Cmd
-		m.textInput, cmd = m.textInput.Update(msg)
-		m.filterSuggestions()
-		return m, cmd
-	}
-
-	switch msg := msg.(type) {
-	case dbusActionMsg:
-		switch string(msg) {
-		case "skip":
-			if m.session.IsRunning || m.session.IsPaused {
-				prevPhase := m.session.Phase
-				startedAt := m.session.StartedAt
-				duration := m.getDurationForPhase()
-				m.session.Skip()
-				m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
-				m.afterTransition(true)
-			}
-		case "start_work":
-			if !m.session.IsRunning {
-				_ = m.session.Start(timer.RealClock{})
-				m.afterTransition(true)
-			}
-		case "add_5":
-			m.session.AddTime(5 * time.Minute)
-			m.writeState()
-		}
-		return m, m.listenForDbusActions()
-	case clearStatusMsg:
-		m.statusMessage = ""
-		return m, nil
-	case tea.KeyMsg:
-		return m.handleKeypress(msg)
-	case tea.QuitMsg:
-		return m, tea.Quit
-	}
-	return m, nil
 }
 
 // View renders the UI (required by tea.Model).
 func (m *Model) View() string {
-	if m.width < 50 || m.height < 16 {
-		return "Terminal too small — minimum 50 × 16.\n"
+	if m.width < 40 || m.height < 10 {
+		return "Terminal too small — minimum 40 × 10.\n"
+	}
+
+	if m.inputMode == modeRecapScreen {
+		return screens.Recap(m.width, m.height, m.theme, m.getRecapInfo())
+	}
+
+	if m.inputMode == modeDurationPicker {
+		return screens.DurationPicker(
+			m.width,
+			m.height,
+			m.theme,
+			m.selectedDurationIdx,
+			m.cfg.DeepFocusDefaultDurationAsDuration(),
+			m.cfg.DeepFocusWorkDurationAsDuration(),
+			m.cfg.DeepFocusShortBreakDurationAsDuration(),
+			m.cfg.DeepFocusLongBreakDurationAsDuration(),
+			m.cfg.DeepFocusSessionsBeforeLongBreak(),
+		)
+	}
+
+	if m.inputMode == modeCustomDurationInput {
+		return screens.Input(m.width, m.height, m.theme, "custom_duration", m.textInput.View(), nil, -1)
+	}
+
+	if m.inputMode == modeSoundPicker {
+		return screens.SoundPicker(m.width, m.height, m.theme, m.selectedSoundIdx, notify.SoundProfiles())
 	}
 
 	if m.inputMode != modeNone {
-		return m.renderInputScreen()
+		var modeStr string
+		switch m.inputMode {
+		case modeNoteInput:
+			modeStr = "note"
+		case modeProjectInput:
+			modeStr = "project"
+		default:
+			modeStr = "task"
+		}
+		return screens.Input(m.width, m.height, m.theme, modeStr, m.textInput.View(), m.filteredSuggestions, m.suggestionIndex)
 	}
 
 	if m.showHelp {
-		return m.renderHelpOverlay()
+		var bindings []screens.HelpBinding
+		for _, b := range m.keymap.ShortHelp() {
+			bindings = append(bindings, screens.HelpBinding{
+				Keys:        strings.Join(b.Keys, ", "),
+				Description: b.Description,
+			})
+		}
+		return screens.Help(m.width, m.height, m.theme, bindings)
 	}
 
 	if m.restorePending {
-		return m.renderRestorePrompt()
+		return screens.RestorePrompt(m.width, m.height, m.theme, m.phaseColor())
 	}
 
 	if m.showStats {
-		return m.renderStatsScreen()
+		now := time.Now()
+		var sessions []*store.Session
+		if m.dbStore != nil {
+			start := now.AddDate(-1, 0, 0)
+			if s, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour)); err == nil {
+				sessions = s
+			}
+		}
+		s := stats.Calculate(sessions, now, m.currentProjectName)
+
+		var recent []*store.Session
+		for i := len(sessions) - 1; i >= 0 && len(recent) < 3; i-- {
+			if sessions[i].Type == "work" {
+				recent = append(recent, sessions[i])
+			}
+		}
+		return screens.Stats(m.width, m.height, m.theme, s, m.statusMessage, recent)
 	}
 
 	return m.renderTimerScreen()
 }
 
-func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.restorePending {
-		return m.handleRestorePrompt(msg)
-	}
-
-	if m.showHelp {
-		switch msg.String() {
-		case "?", "esc":
-			m.showHelp = false
-		case "q", "ctrl+c":
-			m.persistOnQuit()
-			return m, tea.Quit
-		}
-		return m, nil
-	}
-
-	switch msg.String() {
-	case "s":
-		if !m.session.IsRunning {
-			if err := m.session.Start(timer.RealClock{}); err != nil {
-				m.statusMessage = err.Error()
-				return m, nil
-			}
-			m.lastTickTime = time.Now()
-			m.afterTransition(true)
-			return m, m.tick1s()
-		}
-	case " ": // space — pause / resume
-		if m.session.IsRunning {
-			if m.session.IsPaused {
-				if err := m.session.Resume(timer.RealClock{}); err != nil {
-					m.statusMessage = err.Error()
-					return m, nil
-				}
-				m.lastTickTime = time.Now()
-				m.afterTransition(false)
-				return m, m.tick1s()
-			} else {
-				if err := m.session.Pause(timer.RealClock{}); err != nil {
-					m.statusMessage = err.Error()
-					return m, nil
-				}
-				m.afterTransition(false)
-			}
-		}
-	case "n":
-		if m.session.IsRunning || m.session.IsPaused {
-			prevPhase := m.session.Phase
-			startedAt := m.session.StartedAt
-			duration := m.getDurationForPhase()
-			m.session.Skip()
-			m.recordSession(prevPhase, startedAt, time.Now(), false, duration)
-			m.afterTransition(true)
-		}
-	case "t":
-		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
-			m.inputMode = modeTaskInput
-			m.textInput.SetValue(m.currentTask)
-			m.textInput.Placeholder = "Enter current task..."
-			m.textInput.Focus()
-			m.suggestions = nil
-			if m.dbStore != nil {
-				if list, err := m.dbStore.GetUniqueTasks(m.currentProjectID); err == nil {
-					m.suggestions = list
-				}
-			}
-			m.filteredSuggestions = m.suggestions
-			m.suggestionIndex = -1
-		}
-	case "p":
-		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
-			m.inputMode = modeProjectInput
-			m.textInput.SetValue(m.currentProjectName)
-			m.textInput.Placeholder = "Enter project name..."
-			m.textInput.Focus()
-			m.suggestions = nil
-			if m.dbStore != nil {
-				if list, err := m.dbStore.GetProjects(); err == nil {
-					var active []string
-					for _, p := range list {
-						if !p.Archived {
-							active = append(active, p.Name)
-						}
-					}
-					m.suggestions = active
-				}
-			}
-			m.filteredSuggestions = m.suggestions
-			m.suggestionIndex = -1
-		}
-	case "tab":
-		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
-			m.showStats = !m.showStats
-		}
-	case "y":
-		if !m.showHelp && !m.restorePending && m.inputMode == modeNone {
-			s := m.getStats()
-			summary := fmt.Sprintf("PomoGo Stats - Today: %d sessions (%d mins) | Streak: %d days | Month: %d sessions",
-				s.TodayCount, s.TodayMinutes, s.CurrentStreak, s.MonthCount)
-			m.statusMessage = "Copied stats to clipboard!"
-			return m, tea.Batch(copyOSC52(summary), m.clearStatusAfter2s())
-		}
-	case "r":
-		m.session.Reset()
-		m.removeState()
-	case "q", "ctrl+c":
-		m.persistOnQuit()
-		return m, tea.Quit
-	case "?":
-		m.showHelp = true
-	}
-	return m, nil
-}
-
-func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
-		session, _, err := restore.RestoreWithDurations(
-			m.cfg.WorkDurationAsDuration(),
-			m.cfg.ShortBreakDurationAsDuration(),
-			m.cfg.LongBreakDurationAsDuration(),
-			m.cfg.SessionsBeforeLongBreak,
-		)
-		if err != nil {
-			m.restorePending = false
-			m.statusMessage = fmt.Sprintf("restore failed: %v", err)
-			return m, nil
-		}
-		if m.stateManager != nil {
-			if st, err := m.stateManager.Read(); err == nil && st != nil {
-				m.currentTask = st.Task
-				m.currentProjectID = st.ProjectID
-				m.currentProjectName = st.ProjectName
-			}
-		}
-		m.session = session
-		m.restorePending = false
-		m.afterTransition(false)
-		if m.session.IsPaused {
-			return m, nil
-		}
-		return m, m.tick1s()
-	case "n", "N", "esc":
-		m.restorePending = false
-		m.session.State = timer.StateIdle
-		m.session.Phase = timer.PhaseWork
-		m.session.IsRunning = false
-		m.session.IsPaused = false
-		m.writeState()
-	case "q", "ctrl+c":
-		return m, tea.Quit
-	}
-	return m, nil
-}
-
-func (m *Model) tick1s() tea.Cmd {
-	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
-		return tickMsg{t}
-	})
-}
-
-type tickMsg struct{ time time.Time }
-
-// renderTimerScreen renders the main timer display inside a themed border box.
 func (m *Model) renderTimerScreen() string {
-	color := lipgloss.Color(m.phaseColor().String())
-	muted := lipgloss.Color(m.theme.Muted.String())
-
-	// Text area width: total terminal width minus border (2), padding (2×4=8), outer margin (2)
-	textW := m.width - 12
-	if textW > 68 {
-		textW = 68
-	}
-	if textW < 34 {
-		textW = 34
-	}
-
-	center := func(s string) string {
-		return lipgloss.NewStyle().Width(textW).Align(lipgloss.Center).Render(s)
-	}
-
-	// Time display
-	remaining := m.displayRemaining()
-	mins := int(remaining.Minutes())
-	secs := int(remaining.Seconds()) % 60
-	clockRows := bigClockRows(fmt.Sprintf("%02d:%02d", mins, secs), color)
-
-	// Phase and status
-	label := lipgloss.NewStyle().Foreground(color).Bold(true).Render(phaseLabel(m.session))
-	completed := m.session.SessionCount % m.session.SessionsBeforeLongBreak
-	dots := sessionDots(completed, m.session.SessionsBeforeLongBreak, color, muted)
-	statusStr := m.sessionStatus()
-	if m.statusMessage != "" {
-		statusStr = m.statusMessage
-	}
-	status := lipgloss.NewStyle().Foreground(muted).Render(statusStr)
-
-	// Progress bar
-	total := m.getDurationForPhase()
-	progress := 0.0
-	if total > 0 {
-		elapsed := total - remaining
-		if elapsed < 0 {
-			elapsed = 0
-		}
-		progress = float64(elapsed) / float64(total)
-		if progress > 1 {
-			progress = 1
-		}
-	}
-	bar := progressBar(progress, textW, color, muted)
-
-	// Hint line
-	hints := lipgloss.NewStyle().Foreground(muted).Render(
-		"s start  ·  space pause  ·  n skip  ·  t task  ·  p project  ·  r reset  ·  ? help  ·  q quit",
-	)
-
-	projectLine := ""
-	if m.currentProjectName != "" {
-		projectLine = lipgloss.NewStyle().Foreground(muted).Bold(true).Render("Project: " + m.currentProjectName)
-	}
-
-	taskLine := ""
-	if m.currentTask != "" {
-		taskLine = lipgloss.NewStyle().Foreground(muted).Italic(true).Render("Task: " + m.currentTask)
-	}
-
-	var lines []string
-	lines = append(lines, "")
-	for _, row := range clockRows {
-		lines = append(lines, center(row))
-	}
-	lines = append(lines, "")
-	lines = append(lines, center(label))
-	lines = append(lines, center(dots))
-	if projectLine != "" {
-		lines = append(lines, center(projectLine))
-	}
-	if taskLine != "" {
-		lines = append(lines, center(taskLine))
-	}
-	lines = append(lines, center(status))
-	lines = append(lines, "")
-	lines = append(lines, bar)
-	lines = append(lines, "")
-	lines = append(lines, center(hints))
-	lines = append(lines, "")
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(color).
-		Padding(0, 4).
-		Render(strings.Join(lines, "\n"))
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
-func (m *Model) renderHelpOverlay() string {
-	accent := lipgloss.Color(m.theme.Accent.String())
-	muted := lipgloss.Color(m.theme.Muted.String())
-
-	key := func(s string) string {
-		return lipgloss.NewStyle().Foreground(accent).Bold(true).Render(s)
-	}
-	dim := func(s string) string {
-		return lipgloss.NewStyle().Foreground(muted).Render(s)
-	}
-
-	rows := []string{
-		key("s") + "            " + "Start the queued session",
-		key("space") + "        " + "Pause / resume",
-		key("n") + "            " + "Skip to next phase",
-		key("t") + "            " + "Set current task",
-		key("tab") + "          " + "Toggle statistics view",
-		key("r") + "            " + "Reset and clear state",
-		key("q") + " / " + key("ctrl+c") + "   " + "Quit (state saved if running)",
-		"",
-		dim("Sessions auto-restore after an unexpected close."),
-		dim("Press ? or Esc to close this overlay."),
-	}
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accent).
-		Padding(1, 3).
-		Render(strings.Join(rows, "\n"))
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
-func (m *Model) renderRestorePrompt() string {
-	color := lipgloss.Color(m.phaseColor().String())
-	muted := lipgloss.Color(m.theme.Muted.String())
-
-	rows := []string{
-		lipgloss.NewStyle().Foreground(color).Bold(true).Render("Restore previous session?"),
-		"",
-		lipgloss.NewStyle().Foreground(muted).Render("y resume  ·  n discard  ·  q quit"),
-	}
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(color).
-		Padding(1, 4).
-		Render(strings.Join(rows, "\n"))
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	ds := m.displayState()
+	resolvedName, layoutFunc := render.ResolveLayout(m.currentLayoutName, m.width, m.height)
+	ds.LayoutName = resolvedName
+	ds.ThemeName = m.currentThemeName
+	ds.Zen = m.zenMode
+	f := render.Frame{Width: m.width, Height: m.height}
+	layoutContent := layoutFunc(ds, m.theme, f)
+	return render.RenderAmbient(m.currentEffectsName, m.tickCount, f, m.theme, layoutContent)
 }
 
 func (m *Model) getDurationForPhase() time.Duration {
-	switch m.session.Phase {
-	case timer.PhaseWork:
-		return m.session.WorkDuration
-	case timer.PhaseShortBreak:
-		return m.session.ShortBreakDuration
-	case timer.PhaseLongBreak:
-		return m.session.LongBreakDuration
-	default:
-		return m.session.WorkDuration
-	}
+	return m.runner.Block.CurrentSegment.Duration
 }
 
 func (m *Model) displayRemaining() time.Duration {
-	if !m.session.IsRunning {
-		if m.session.RemainingTime > 0 {
-			return m.session.RemainingTime
+	if !m.runner.Timer.IsRunning {
+		if m.runner.Block.Mode == session.ModeDeep {
+			return m.runner.Block.PlannedTotal
 		}
-		return m.getDurationForPhase()
+		return m.cfg.WorkDurationAsDuration()
 	}
-	if m.session.IsPaused {
-		return m.session.RemainingTime
-	}
-	remaining := time.Until(m.session.EndsAt)
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
+	return m.runner.Block.Remaining(m.runner.Timer.RemainingTime)
 }
 
 func (m *Model) phaseColor() theme.Color {
-	if !m.session.IsRunning && m.session.State == timer.StateIdle {
+	if !m.runner.Timer.IsRunning {
 		return m.theme.Idle
 	}
-	switch m.session.Phase {
+	switch m.runner.Timer.Phase {
+	case timer.PhaseWork:
+		return m.theme.Work
 	case timer.PhaseShortBreak:
 		return m.theme.Break
 	case timer.PhaseLongBreak:
 		return m.theme.LongBreak
 	default:
-		return m.theme.Work
+		return m.theme.Idle
 	}
 }
 
 func (m *Model) sessionStatus() string {
 	switch {
-	case m.session.IsPaused:
+	case m.runner.Timer.IsPaused:
 		return "paused"
-	case m.session.IsRunning:
+	case m.runner.Timer.IsRunning:
 		return "running"
 	default:
+		if m.runner.Block.Mode == session.ModeDeep {
+			hours := int(m.runner.Block.PlannedTotal.Hours())
+			mins := int(m.runner.Block.PlannedTotal.Minutes()) % 60
+			var durStr string
+			if hours > 0 {
+				durStr = fmt.Sprintf("%dh%dm", hours, mins)
+				if mins == 0 {
+					durStr = fmt.Sprintf("%dh", hours)
+				}
+			} else {
+				durStr = fmt.Sprintf("%dm", mins)
+			}
+			return fmt.Sprintf("deep focus %s · press s to start", durStr)
+		}
 		return "press s to start"
 	}
 }
@@ -734,7 +327,7 @@ func (m *Model) afterTransition(sendNotification bool) {
 	m.statusMessage = ""
 	m.writeState()
 	if sendNotification && m.notifier != nil {
-		_ = m.notifier.NotifyTransition(m.session.State, m.session.Phase)
+		_ = m.notifier.NotifyTransition(m.runner.Timer.State, m.runner.Timer.Phase)
 	}
 	m.triggerHooks()
 }
@@ -751,13 +344,16 @@ func (m *Model) recordSession(phase timer.SessionPhase, startedAt, endedAt time.
 		Type:         "work",
 		Task:         m.currentTask,
 		ProjectID:    m.currentProjectID,
+		BlockID:      m.currentBlockID,
+		Mode:         string(m.runner.Block.Mode),
+		Completed:    completed,
 		StartedAt:    startedAt,
 		EndedAt:      endedAt,
-		Completed:    completed,
 		DurationSecs: int(duration.Seconds()),
 	}
 
-	if m.cfg.PromptForNotes {
+	// For deep focus, note prompt is only at the block end, handled in events.
+	if m.runner.Block.Mode == session.ModeQuick && m.cfg.PromptForNotes {
 		m.pendingSession = sess
 		m.inputMode = modeNoteInput
 		m.textInput.SetValue("")
@@ -775,7 +371,6 @@ func (m *Model) getStats() *stats.Stats {
 	if m.dbStore == nil {
 		return stats.Calculate(nil, now, m.currentProjectName)
 	}
-	// Query sessions for the last 365 days
 	start := now.AddDate(-1, 0, 0)
 	sessions, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour))
 	if err != nil {
@@ -784,246 +379,12 @@ func (m *Model) getStats() *stats.Stats {
 	return stats.Calculate(sessions, now, m.currentProjectName)
 }
 
-func weekBarGraph(weekDays [7]stats.DayStats, color, muted lipgloss.Color) string {
-	maxVal := 0
-	for _, wd := range weekDays {
-		if wd.Count > maxVal {
-			maxVal = wd.Count
-		}
-	}
-
-	var sb strings.Builder
-	for i, wd := range weekDays {
-		if i > 0 {
-			sb.WriteByte('\n')
-		}
-		
-		weekdayName := wd.Date.Format("Mon")
-		sb.WriteString(lipgloss.NewStyle().Foreground(muted).Render(weekdayName + "  "))
-
-		barLen := wd.Count
-		if barLen > 0 {
-			bar := strings.Repeat("█", barLen)
-			sb.WriteString(lipgloss.NewStyle().Foreground(color).Render(bar))
-		} else {
-			sb.WriteString(lipgloss.NewStyle().Foreground(muted).Render("░"))
-		}
-		
-		sb.WriteString(fmt.Sprintf(" %d", wd.Count))
-	}
-	return sb.String()
-}
-
-func (m *Model) renderStatsScreen() string {
-	accent := lipgloss.Color(m.theme.Accent.String())
-	muted := lipgloss.Color(m.theme.Muted.String())
-	color := lipgloss.Color(m.theme.Work.String())
-
-	textW := m.width - 12
-	if textW > 68 {
-		textW = 68
-	}
-	if textW < 34 {
-		textW = 34
-	}
-
-	center := func(s string) string {
-		return lipgloss.NewStyle().Width(textW).Align(lipgloss.Center).Render(s)
-	}
-
-	now := time.Now()
-	var sessions []*store.Session
-	if m.dbStore != nil {
-		start := now.AddDate(-1, 0, 0)
-		if s, err := m.dbStore.GetSessions(start, now.Add(24*time.Hour)); err == nil {
-			sessions = s
-		}
-	}
-	s := stats.Calculate(sessions, now)
-
-	// Today stats
-	todayStr := fmt.Sprintf("Today: %d sessions (%d mins focused)", s.TodayCount, s.TodayMinutes)
-	
-	// Streak stats
-	streakStr := fmt.Sprintf("Streak: %d days (Best: %d days)", s.CurrentStreak, s.BestStreak)
-	
-	// Month stats
-	monthStr := fmt.Sprintf("This Month: %d sessions (Rate: %.0f%%)", s.MonthCount, s.CompletionRate*100)
-
-	// Week graph title
-	graphTitle := lipgloss.NewStyle().Foreground(accent).Bold(true).Render("Weekly Focus Activity")
-	graph := weekBarGraph(s.WeekDays, color, muted)
-
-	// Recent sessions
-	var recent []*store.Session
-	for i := len(sessions) - 1; i >= 0 && len(recent) < 3; i-- {
-		if sessions[i].Type == "work" {
-			recent = append(recent, sessions[i])
-		}
-	}
-
-	recentTitle := lipgloss.NewStyle().Foreground(accent).Bold(true).Render("Recent Work Sessions")
-	
-	var recentLines []string
-	if len(recent) == 0 {
-		recentLines = append(recentLines, lipgloss.NewStyle().Foreground(muted).Render("No sessions recorded yet"))
-	} else {
-		for _, r := range recent {
-			timeStr := r.StartedAt.Local().Format("15:04")
-			taskStr := r.Task
-			if taskStr == "" {
-				taskStr = "[no task]"
-			}
-			
-			status := "completed"
-			statusColor := color
-			if !r.Completed {
-				status = "skipped"
-				statusColor = muted
-			}
-
-			line := fmt.Sprintf("%s  %s (%s)", 
-				lipgloss.NewStyle().Foreground(muted).Render(timeStr),
-				lipgloss.NewStyle().Bold(true).Render(taskStr),
-				lipgloss.NewStyle().Foreground(statusColor).Render(status),
-			)
-			if r.Note != "" {
-				line += lipgloss.NewStyle().Foreground(muted).Render(" - " + r.Note)
-			}
-			recentLines = append(recentLines, line)
-		}
-	}
-
-	// Hints/Status
-	var hints string
-	if m.statusMessage != "" {
-		hints = lipgloss.NewStyle().Foreground(accent).Render(m.statusMessage)
-	} else {
-		hints = lipgloss.NewStyle().Foreground(muted).Render("Tab timer  ·  y yank stats  ·  ? help  ·  q quit")
-	}
-
-	var lines []string
-	lines = append(lines, "")
-	lines = append(lines, center(lipgloss.NewStyle().Foreground(color).Bold(true).Render("Focus Statistics")))
-	lines = append(lines, "")
-	lines = append(lines, center(todayStr))
-	lines = append(lines, center(streakStr))
-	lines = append(lines, center(monthStr))
-	lines = append(lines, "")
-	lines = append(lines, center(graphTitle))
-	lines = append(lines, "")
-	
-	// Center the bar graph block
-	graphLines := strings.Split(graph, "\n")
-	maxLineLen := 0
-	for _, l := range graphLines {
-		length := lipgloss.Width(l)
-		if length > maxLineLen {
-			maxLineLen = length
-		}
-	}
-	pad := (textW - maxLineLen) / 2
-	if pad < 0 {
-		pad = 0
-	}
-	var paddedGraphLines []string
-	for _, l := range graphLines {
-		paddedGraphLines = append(paddedGraphLines, strings.Repeat(" ", pad)+l)
-	}
-	lines = append(lines, strings.Join(paddedGraphLines, "\n"))
-	
-	lines = append(lines, "")
-	lines = append(lines, center(recentTitle))
-	lines = append(lines, "")
-
-	// Center recent sessions block
-	maxRecentLen := 0
-	for _, l := range recentLines {
-		length := lipgloss.Width(l)
-		if length > maxRecentLen {
-			maxRecentLen = length
-		}
-	}
-	rPad := (textW - maxRecentLen) / 2
-	if rPad < 0 {
-		rPad = 0
-	}
-	var paddedRecentLines []string
-	for _, l := range recentLines {
-		paddedRecentLines = append(paddedRecentLines, strings.Repeat(" ", rPad)+l)
-	}
-	lines = append(lines, strings.Join(paddedRecentLines, "\n"))
-
-	lines = append(lines, "")
-	lines = append(lines, center(hints))
-	lines = append(lines, "")
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accent).
-		Padding(1, 4).
-		Render(strings.Join(lines, "\n"))
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
-func (m *Model) renderInputScreen() string {
-	color := lipgloss.Color(m.theme.Accent.String())
-	title := "Set Current Task"
-	if m.inputMode == modeNoteInput {
-		color = lipgloss.Color(m.theme.Work.String())
-		title = "Session Note"
-	} else if m.inputMode == modeProjectInput {
-		color = lipgloss.Color(m.theme.Accent.String())
-		title = "Set Project Name"
-	}
-
-	var rows []string
-	rows = append(rows, lipgloss.NewStyle().Foreground(color).Bold(true).Render(title))
-	rows = append(rows, "")
-	rows = append(rows, m.textInput.View())
-	rows = append(rows, "")
-
-	if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && len(m.filteredSuggestions) > 0 {
-		rows = append(rows, lipgloss.NewStyle().Foreground(color).Bold(true).Render("Suggestions:"))
-		for i, s := range m.filteredSuggestions {
-			if i >= 5 {
-				break
-			}
-			indicator := "  "
-			itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String()))
-			if i == m.suggestionIndex {
-				indicator = "> "
-				itemStyle = lipgloss.NewStyle().Foreground(color).Bold(true)
-			}
-			rows = append(rows, indicator+itemStyle.Render(s))
-		}
-		rows = append(rows, "")
-	}
-
-	footer := "enter save  ·  esc cancel"
-	if (m.inputMode == modeTaskInput || m.inputMode == modeProjectInput) && len(m.filteredSuggestions) > 0 {
-		footer = "↓/↑ navigate  ·  tab select  ·  ctrl+d delete  ·  enter save"
-	}
-	rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.Muted.String())).Render(footer))
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(color).
-		Padding(1, 4).
-		Width(40).
-		Align(lipgloss.Left).
-		Render(strings.Join(rows, "\n"))
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
 func (m *Model) writeState() {
 	if m.stateManager == nil {
 		return
 	}
-	if err := m.stateManager.Write(m.session, m.currentTask, m.currentProjectID, m.currentProjectName); err != nil {
-		m.statusMessage = fmt.Sprintf("state error: %v", err)
+	if err := m.stateManager.Write(m.runner, m.currentTask, m.currentProjectID, m.currentProjectName, m.currentBlockID); err != nil {
+		m.statusMessage = fmt.Sprintf("statefile error: %v", err)
 	}
 }
 
@@ -1035,103 +396,25 @@ func (m *Model) removeState() {
 }
 
 func (m *Model) persistOnQuit() {
+	if m.runner.Timer.IsRunning && !m.runner.Timer.IsPaused {
+		m.runner.Timer.Pause(timer.RealClock{})
+	}
 	m.writeState()
-}
-
-// phaseLabel returns a human-readable name for the current phase.
-func phaseLabel(s *timer.Session) string {
-	if !s.IsRunning && !s.IsPaused && s.State == timer.StateIdle {
-		return "Focus Timer"
-	}
-	switch s.Phase {
-	case timer.PhaseWork:
-		return "Work"
-	case timer.PhaseShortBreak:
-		return "Short Break"
-	case timer.PhaseLongBreak:
-		return "Long Break"
-	default:
-		return "Focus Timer"
-	}
-}
-
-// sessionDots renders a dot-per-session progress indicator (● ● ○ ○).
-func sessionDots(completed, total int, filled, empty lipgloss.Color) string {
-	on := lipgloss.NewStyle().Foreground(filled)
-	off := lipgloss.NewStyle().Foreground(empty)
-	var sb strings.Builder
-	for i := 0; i < total; i++ {
-		if i > 0 {
-			sb.WriteByte(' ')
-		}
-		if i < completed {
-			sb.WriteString(on.Render("●"))
-		} else {
-			sb.WriteString(off.Render("○"))
-		}
-	}
-	return sb.String()
-}
-
-// progressBar renders a ━─ style bar of exactly `width` visible characters.
-func progressBar(progress float64, width int, filled, empty lipgloss.Color) string {
-	n := int(float64(width) * progress)
-	if n < 0 {
-		n = 0
-	}
-	if n > width {
-		n = width
-	}
-	f := lipgloss.NewStyle().Foreground(filled).Render(strings.Repeat("━", n))
-	e := lipgloss.NewStyle().Foreground(empty).Render(strings.Repeat("─", width-n))
-	return f + e
-}
-
-// bigClockRows returns 5 rows of large ASCII-art digits for a "MM:SS" string,
-// styled with the given color.
-func bigClockRows(timeStr string, color lipgloss.Color) []string {
-	style := lipgloss.NewStyle().Foreground(color).Bold(true)
-	var rows [5]strings.Builder
-	first := true
-	for _, ch := range timeStr {
-		if !first {
-			for i := range rows {
-				rows[i].WriteByte(' ')
-			}
-		}
-		first = false
-		switch {
-		case ch >= '0' && ch <= '9':
-			d := bigDigits[ch-'0']
-			for i, seg := range d {
-				rows[i].WriteString(seg)
-			}
-		case ch == ':':
-			for i, seg := range bigColon {
-				rows[i].WriteString(seg)
-			}
-		}
-	}
-	result := make([]string, 5)
-	for i, sb := range rows {
-		result[i] = style.Render(sb.String())
-	}
-	return result
 }
 
 func (m *Model) updateTerminalTitle() tea.Cmd {
 	return func() tea.Msg {
 		title := "Focus Timer"
-		if m.session.IsRunning {
-			mins := int(m.session.RemainingTime.Minutes())
-			secs := int(m.session.RemainingTime.Seconds()) % 60
+		if m.runner.Timer.IsRunning {
+			mins := int(m.runner.Timer.RemainingTime.Minutes())
+			secs := int(m.runner.Timer.RemainingTime.Seconds()) % 60
 			stateStr := "work"
 			emoji := "🍅"
-			if m.session.Phase == timer.PhaseShortBreak || m.session.Phase == timer.PhaseLongBreak {
+			if m.runner.Timer.Phase == timer.PhaseShortBreak || m.runner.Timer.Phase == timer.PhaseLongBreak {
 				stateStr = "break"
 				emoji = "☕"
 			}
-			if m.session.IsPaused {
+			if m.runner.Timer.IsPaused {
 				title = fmt.Sprintf("⏸️ %02d:%02d · %s", mins, secs, stateStr)
 			} else {
 				title = fmt.Sprintf("%s %02d:%02d · %s", emoji, mins, secs, stateStr)
@@ -1142,43 +425,12 @@ func (m *Model) updateTerminalTitle() tea.Cmd {
 	}
 }
 
-type clearStatusMsg struct{}
-
-func (m *Model) clearStatusAfter2s() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-		return clearStatusMsg{}
-	})
-}
-
-func copyOSC52(text string) tea.Cmd {
-	return func() tea.Msg {
-		b64 := base64.StdEncoding.EncodeToString([]byte(text))
-		seq := fmt.Sprintf("\033]52;c;%s\007", b64)
-		if os.Getenv("TMUX") != "" {
-			seq = fmt.Sprintf("\033Ptmux;\033%s\033\\", seq)
-		}
-		fmt.Print(seq)
-		return nil
-	}
-}
-
-type dbusActionMsg string
-
-func (m *Model) listenForDbusActions() tea.Cmd {
-	if m.notifier == nil || m.notifier.DBusNotifier() == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		action := <-m.notifier.DBusNotifier().ActionsChan()
-		return dbusActionMsg(action)
-	}
-}
-
 // SetProjectByName binds a project to the model by name.
 func (m *Model) SetProjectByName(name string) {
 	if name == "" {
 		m.currentProjectID = nil
 		m.currentProjectName = ""
+		m.currentProjectIcon = ""
 		return
 	}
 	if m.dbStore != nil {
@@ -1188,6 +440,7 @@ func (m *Model) SetProjectByName(name string) {
 			if err := m.dbStore.CreateProject(p); err == nil {
 				m.currentProjectID = &p.ID
 				m.currentProjectName = p.Name
+				m.currentProjectIcon = p.Icon
 			}
 		} else {
 			if p.Archived {
@@ -1195,94 +448,183 @@ func (m *Model) SetProjectByName(name string) {
 			}
 			m.currentProjectID = &p.ID
 			m.currentProjectName = p.Name
+			m.currentProjectIcon = p.Icon
 		}
 	} else {
 		m.currentProjectName = name
+		m.currentProjectIcon = ""
+	}
+
+	if m.cfg.ShowGit {
+		cwd, _ := os.Getwd()
+		m.gitBranch = devinfo.FindGitBranch(cwd)
 	}
 }
 
-// SetCustomSoundEvent overrides transition sounds for the session.
+// SetCustomSoundEvent overrides the notifier sound behavior.
 func (m *Model) SetCustomSoundEvent(event string) {
 	if m.notifier != nil {
 		m.notifier.SetCustomSoundEvent(event)
 	}
 }
 
-func (m *Model) filterSuggestions() {
-	val := strings.ToLower(strings.TrimSpace(m.textInput.Value()))
-	if val == "" {
-		m.filteredSuggestions = m.suggestions
-	} else {
-		var filtered []string
-		for _, s := range m.suggestions {
-			if strings.Contains(strings.ToLower(s), val) {
-				filtered = append(filtered, s)
+func (m *Model) sessionStateString(state timer.SessionState) string {
+	return state.String()
+}
+
+func (m *Model) cycleTheme() {
+	themes := theme.List()
+	if len(themes) == 0 {
+		return
+	}
+	idx := -1
+	for i, t := range themes {
+		if t == m.currentThemeName {
+			idx = i
+			break
+		}
+	}
+	nextIdx := (idx + 1) % len(themes)
+	m.currentThemeName = themes[nextIdx]
+	m.theme = theme.Get(m.currentThemeName)
+}
+
+func (m *Model) cycleLayout() {
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice", "focus-stack", "command-center"}
+	idx := -1
+	for i, l := range layouts {
+		if l == m.currentLayoutName {
+			idx = i
+			break
+		}
+	}
+	nextIdx := (idx + 1) % len(layouts)
+	m.currentLayoutName = layouts[nextIdx]
+}
+
+func (m *Model) cycleEffects() {
+	effects := []string{"none", "stars", "snow", "rain", "embers", "scanline"}
+	idx := -1
+	for i, eff := range effects {
+		if eff == m.currentEffectsName {
+			idx = i
+			break
+		}
+	}
+	nextIdx := (idx + 1) % len(effects)
+	m.currentEffectsName = effects[nextIdx]
+}
+
+func (m *Model) getRecapInfo() screens.RecapInfo {
+	streak := 0
+	var sessions []*store.Session
+	if m.dbStore != nil {
+		start := time.Now().AddDate(-1, 0, 0)
+		if s, err := m.dbStore.GetSessions(start, time.Now().Add(24*time.Hour)); err == nil {
+			sessions = s
+		}
+	}
+	s := stats.Calculate(sessions, time.Now(), m.currentProjectName)
+	streak = s.CurrentStreak
+
+	var totalFocused time.Duration
+	pauses := 0
+	segments := 0
+	breaks := 0
+	isDeep := m.selectedMode == session.ModeDeep
+	focusScore := 10
+
+	if isDeep && m.currentBlockID != nil && m.dbStore != nil {
+		if b, err := m.dbStore.GetLastBlock(); err == nil && b != nil {
+			pauses = b.Pauses
+			totalFocused = time.Duration(b.PlannedSecs) * time.Second
+		}
+		completedCount := 0
+		abandoned := 0
+		skippedBreaks := 0
+		for _, sess := range sessions {
+			if sess.BlockID != nil && *sess.BlockID == *m.currentBlockID {
+				if sess.Type == "work" {
+					if sess.Completed {
+						completedCount++
+					} else {
+						abandoned++
+					}
+				} else if (sess.Type == "short_break" || sess.Type == "long_break") && !sess.Completed {
+					skippedBreaks++
+				}
 			}
 		}
-		m.filteredSuggestions = filtered
+		segments = completedCount
+		breaks = countBreakSegments(m.runner.Block.Segments)
+		focusScore = stats.CalculateFocusScore(pauses, skippedBreaks, abandoned)
+	} else {
+		segments = m.cfg.QuickFocusSessionsBeforeLongBreak()
+		breaks = segments
+		totalFocused = m.cfg.QuickFocusWorkDurationAsDuration() * time.Duration(segments)
+		pauses = 0
+		focusScore = stats.CalculateFocusScore(pauses, 0, 0)
 	}
 
-	if m.suggestionIndex >= len(m.filteredSuggestions) {
-		m.suggestionIndex = len(m.filteredSuggestions) - 1
-	}
-	if m.suggestionIndex < -1 {
-		m.suggestionIndex = -1
+	return screens.RecapInfo{
+		TotalFocused: totalFocused,
+		Segments:     segments,
+		Breaks:       breaks,
+		Pauses:       pauses,
+		Streak:       streak,
+		IsDeep:       isDeep,
+		FocusScore:   focusScore,
 	}
 }
 
-func (m *Model) triggerHooks() {
-	if m.lastHookState == m.session.State {
-		return
+func countBreakSegments(segments []session.Segment) int {
+	count := 0
+	for _, seg := range segments {
+		if seg.Kind == session.SegmentKindShortBreak || seg.Kind == session.SegmentKindLongBreak {
+			count++
+		}
 	}
-
-	// 1. End events
-	if m.lastHookState == timer.StateWork {
-		m.runHook(m.cfg.OnWorkEnd)
-	} else if m.lastHookState == timer.StateShortBreak || m.lastHookState == timer.StateLongBreak {
-		m.runHook(m.cfg.OnBreakEnd)
-	}
-
-	// 2. Start events
-	if m.session.State == timer.StateWork {
-		m.runHook(m.cfg.OnWorkStart)
-	} else if m.session.State == timer.StateShortBreak || m.session.State == timer.StateLongBreak {
-		m.runHook(m.cfg.OnBreakStart)
-	}
-
-	m.lastHookState = m.session.State
+	return count
 }
 
-func (m *Model) runHook(cmdStr string) {
-	if cmdStr == "" {
-		return
+func (m *Model) cycleVerbLabel() {
+	verbs := []string{"Focusing", "Building", "Fixing", "Debugging", "Reading", "Writing", "Learning", "Designing", "Researching"}
+	idx := -1
+	for i, v := range verbs {
+		if v == m.currentVerbLabel {
+			idx = i
+			break
+		}
 	}
-
-	go func() {
-		cmd := exec.Command("sh", "-c", cmdStr)
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_STATE=%s", m.sessionStateString(m.session.State)))
-		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_PREV_STATE=%s", m.sessionStateString(m.lastHookState)))
-		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_TASK=%s", m.currentTask))
-		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_PROJECT=%s", m.currentProjectName))
-		cmd.Env = append(cmd.Env, fmt.Sprintf("POMOGO_DURATION=%d", int(m.getDurationForPhase().Seconds())))
-
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		_ = cmd.Run()
-	}()
+	nextIdx := (idx + 1) % len(verbs)
+	m.currentVerbLabel = verbs[nextIdx]
 }
 
-func (m *Model) sessionStateString(state timer.SessionState) string {
-	switch state {
-	case timer.StateIdle:
-		return "idle"
-	case timer.StateWork:
-		return "work"
-	case timer.StateShortBreak:
-		return "short_break"
-	case timer.StateLongBreak:
-		return "long_break"
-	default:
-		return "unknown"
+func GetVerbForTask(task string) string {
+	taskLower := strings.ToLower(task)
+	if strings.Contains(taskLower, "build") {
+		return "Building"
 	}
+	if strings.Contains(taskLower, "fix") {
+		return "Fixing"
+	}
+	if strings.Contains(taskLower, "debug") {
+		return "Debugging"
+	}
+	if strings.Contains(taskLower, "read") {
+		return "Reading"
+	}
+	if strings.Contains(taskLower, "write") {
+		return "Writing"
+	}
+	if strings.Contains(taskLower, "learn") {
+		return "Learning"
+	}
+	if strings.Contains(taskLower, "design") {
+		return "Designing"
+	}
+	if strings.Contains(taskLower, "research") {
+		return "Researching"
+	}
+	return "Focusing"
 }

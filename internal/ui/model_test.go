@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
+	"github.com/Ibnu-Afdel/pomogo/internal/render"
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
+	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	"github.com/Ibnu-Afdel/pomogo/internal/ui/screens"
 )
 
 func TestNewModel(t *testing.T) {
@@ -23,8 +28,8 @@ func TestNewModel(t *testing.T) {
 	if model.cfg != cfg {
 		t.Error("Config not set correctly")
 	}
-	if model.session == nil {
-		t.Fatal("Session not initialized")
+	if model.runner == nil {
+		t.Fatal("Runner not initialized")
 	}
 	if model.theme == nil {
 		t.Fatal("Theme not initialized")
@@ -83,6 +88,115 @@ func TestViewTinyTerminal(t *testing.T) {
 	}
 }
 
+func TestGoldenClassicRender(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.currentProjectName = "TestProject"
+	model.currentTask = "TestTask"
+	model.gitBranch = "feature/deep-work"
+
+	// Run the render
+	ds := model.displayState()
+	f := render.Frame{Width: 80, Height: 24}
+	got := render.Classic(ds, model.theme, f)
+
+	goldenPath := "testdata/classic.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+	} else if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenPath, []byte(got), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden file: %v", err)
+		}
+		t.Log("Created golden file")
+		return
+	}
+
+	wantBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("failed to read golden file: %v", err)
+	}
+	want := string(wantBytes)
+
+	if got != want {
+		t.Errorf("rendered output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenPath, got, want)
+	}
+}
+
+func TestGoldenDeepClassicRender(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.currentProjectName = "DeepProject"
+	model.currentTask = "DeepTask"
+	model.gitBranch = "feature/deep-work"
+
+	// Select Deep Focus
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
+	model.runner = session.NewRunner(block)
+	model.selectedMode = session.ModeDeep
+
+	// Start the runner so it is running Work
+	_ = model.runner.Start(timer.RealClock{})
+
+	// 1. Test Work Golden
+	dsWork := model.displayState()
+	f := render.Frame{Width: 80, Height: 24}
+	gotWork := render.Classic(dsWork, model.theme, f)
+
+	goldenWorkPath := "testdata/deep_work.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenWorkPath, []byte(gotWork), 0644)
+	} else if _, err := os.Stat(goldenWorkPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenWorkPath, []byte(gotWork), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden work file: %v", err)
+		}
+	} else {
+		wantBytes, err := os.ReadFile(goldenWorkPath)
+		if err != nil {
+			t.Fatalf("failed to read golden work file: %v", err)
+		}
+		want := string(wantBytes)
+		if gotWork != want {
+			t.Errorf("Deep work output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenWorkPath, gotWork, want)
+		}
+	}
+
+	// 2. Skip to break segment
+	_, _ = model.runner.Skip(timer.RealClock{})
+	dsBreak := model.displayState()
+	gotBreak := render.Classic(dsBreak, model.theme, f)
+
+	goldenBreakPath := "testdata/deep_break.golden"
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenBreakPath, []byte(gotBreak), 0644)
+	} else if _, err := os.Stat(goldenBreakPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		err := os.WriteFile(goldenBreakPath, []byte(gotBreak), 0644)
+		if err != nil {
+			t.Fatalf("failed to write golden break file: %v", err)
+		}
+	} else {
+		wantBytes, err := os.ReadFile(goldenBreakPath)
+		if err != nil {
+			t.Fatalf("failed to read golden break file: %v", err)
+		}
+		want := string(wantBytes)
+		if gotBreak != want {
+			t.Errorf("Deep break output does not match golden file %s.\nGOT:\n%s\nWANT:\n%s", goldenBreakPath, gotBreak, want)
+		}
+	}
+}
+
 func TestGetDurationForPhase(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
@@ -97,7 +211,7 @@ func TestGetDurationForPhase(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		model.session.Phase = tt.phase
+		model.runner.Block.CurrentSegment.Duration = tt.expected
 		got := model.getDurationForPhase()
 		if got != tt.expected {
 			t.Errorf("getDurationForPhase(%v) = %v, want %v", tt.phase, got, tt.expected)
@@ -125,8 +239,328 @@ func TestSessionTracking(t *testing.T) {
 	cfg := config.Default()
 	model := NewModel(cfg)
 
-	if model.session.IsRunning {
+	if model.runner.Timer.IsRunning {
 		t.Error("Session should not be running initially")
+	}
+}
+
+func TestKeyboardQuitAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+				_, cmd := model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("q")}))
+				if !isQuitCmd(cmd) {
+					t.Fatalf("q did not return tea.Quit for theme=%s layout=%s", themeName, layoutName)
+				}
+			})
+		}
+	}
+}
+
+func TestKeyboardSpacePauseResumeAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+				if err := model.runner.Start(timer.RealClock{}); err != nil {
+					t.Fatalf("start failed: %v", err)
+				}
+
+				_, cmd := model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
+				if !model.runner.Timer.IsPaused {
+					t.Fatalf("space did not pause for theme=%s layout=%s", themeName, layoutName)
+				}
+				if view := model.View(); view == "" {
+					t.Fatal("paused view is empty")
+				}
+
+				_, cmd = model.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
+				_ = cmd
+				if model.runner.Timer.IsPaused {
+					t.Fatalf("second space did not resume for theme=%s layout=%s", themeName, layoutName)
+				}
+				if view := model.View(); view == "" {
+					t.Fatal("resumed view is empty")
+				}
+			})
+		}
+	}
+}
+
+func TestGlobalKeysAcrossThemesAndLayouts(t *testing.T) {
+	for _, themeName := range theme.List() {
+		for layoutName := range render.Registry {
+			t.Run(themeName+"/"+layoutName, func(t *testing.T) {
+				model := newKeyboardTestModel(t, themeName, layoutName)
+
+				_, _ = model.Update(keyRunes("d"))
+				if model.inputMode != modeDurationPicker {
+					t.Fatal("d did not open Deep Focus duration picker")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close duration picker")
+				}
+
+				_, _ = model.Update(keyRunes("t"))
+				if model.inputMode != modeTaskInput {
+					t.Fatal("t did not open task input")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close task input")
+				}
+
+				_, _ = model.Update(keyRunes("p"))
+				if model.inputMode != modeProjectInput {
+					t.Fatal("p did not open project input")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close project input")
+				}
+
+				_, _ = model.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+				if !model.showStats {
+					t.Fatal("tab did not open stats")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.showStats {
+					t.Fatal("esc did not close stats")
+				}
+
+				_, _ = model.Update(keyRunes("?"))
+				if !model.showHelp {
+					t.Fatal("? did not open help")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.showHelp {
+					t.Fatal("esc did not close help")
+				}
+
+				oldTheme := model.currentThemeName
+				_, _ = model.Update(keyRunes("T"))
+				if model.currentThemeName == oldTheme {
+					t.Fatal("T did not cycle theme")
+				}
+
+				oldLayout := model.currentLayoutName
+				_, _ = model.Update(keyRunes("L"))
+				if model.currentLayoutName == oldLayout {
+					t.Fatal("L did not cycle layout")
+				}
+
+				_, _ = model.Update(keyRunes("a"))
+				if model.inputMode != modeSoundPicker {
+					t.Fatal("a did not open sound picker")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.inputMode != modeNone {
+					t.Fatal("esc did not close sound picker")
+				}
+
+				_, _ = model.Update(keyRunes("S"))
+				if !model.zenMode {
+					t.Fatal("S did not enable zen mode")
+				}
+				_, _ = model.Update(keyEsc())
+				if model.zenMode {
+					t.Fatal("esc did not exit zen mode")
+				}
+
+				oldEffects := model.currentEffectsName
+				_, _ = model.Update(keyRunes("e"))
+				if model.currentEffectsName == oldEffects {
+					t.Fatal("e did not cycle effects")
+				}
+
+				oldVerb := model.currentVerbLabel
+				_, _ = model.Update(keyRunes("v"))
+				if model.currentVerbLabel == oldVerb {
+					t.Fatal("v did not cycle activity verb")
+				}
+
+				_, _ = model.Update(keyRunes("s"))
+				if !model.runner.Timer.IsRunning {
+					t.Fatal("s did not start timer")
+				}
+
+				_, _ = model.Update(keyRunes("n"))
+				if model.runner.Block.Index == 0 && model.runner.Block.CurrentSegment.Kind == session.SegmentKindWork {
+					t.Fatal("n did not skip the current segment")
+				}
+
+				_, _ = model.Update(keyRunes("r"))
+				if model.runner.Timer.IsRunning || model.runner.Timer.IsPaused {
+					t.Fatalf("r did not reset timer: inputMode=%d state=%s phase=%s running=%v paused=%v status=%q",
+						model.inputMode,
+						model.runner.Timer.State,
+						model.runner.Timer.Phase,
+						model.runner.Timer.IsRunning,
+						model.runner.Timer.IsPaused,
+						model.statusMessage,
+					)
+				}
+			})
+		}
+	}
+}
+
+func newKeyboardTestModel(t *testing.T, themeName, layoutName string) *Model {
+	t.Helper()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	cfg := config.Default()
+	cfg.Theme = themeName
+	cfg.Layout = layoutName
+	cfg.PromptForNotes = false
+	model := NewModel(cfg)
+	model.width = 120
+	model.height = 32
+	model.restorePending = false
+	model.currentThemeName = themeName
+	model.theme = theme.Get(themeName)
+	model.currentLayoutName = layoutName
+	return model
+}
+
+func keyRunes(s string) tea.KeyMsg {
+	return tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune(s)})
+}
+
+func keyEsc() tea.KeyMsg {
+	return tea.KeyMsg(tea.Key{Type: tea.KeyEsc})
+}
+
+func keyDown() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyDown}
+}
+
+func keyTab() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyTab}
+}
+
+func keyEnter() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyEnter}
+}
+
+func isQuitCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func TestDeepFocusFourHourUsesLongBreakCadence(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("d"))
+	model = updated.(*Model)
+	if model.inputMode != modeDurationPicker {
+		t.Fatalf("d did not open duration picker; input mode = %v", model.inputMode)
+	}
+	for i := 0; i < 5 && model.selectedDurationIdx != 3; i++ {
+		updated, _ = model.Update(keyDown())
+		model = updated.(*Model)
+	}
+	if model.selectedDurationIdx != 3 {
+		t.Fatalf("selected duration index = %d, want 3 for 4h", model.selectedDurationIdx)
+	}
+	updated, _ = model.Update(keyEnter())
+	model = updated.(*Model)
+	if model.inputMode != modeNone {
+		t.Fatalf("enter did not close duration picker; input mode = %v", model.inputMode)
+	}
+
+	if model.selectedMode != session.ModeDeep {
+		t.Fatalf("selected mode = %s, want deep", model.selectedMode)
+	}
+	if model.deepDuration != 4*time.Hour {
+		t.Fatalf("deep duration = %v, want 4h", model.deepDuration)
+	}
+
+	longBreaks := 0
+	for _, seg := range model.runner.Block.Segments {
+		if seg.Kind == session.SegmentKindLongBreak {
+			longBreaks++
+			if seg.Duration != 15*time.Minute {
+				t.Fatalf("long break duration = %v, want 15m", seg.Duration)
+			}
+		}
+	}
+	if longBreaks == 0 {
+		t.Fatalf("4h deep focus plan has no long break: %#v", model.runner.Block.Segments)
+	}
+
+	updated, _ = model.Update(keyRunes("s"))
+	model = updated.(*Model)
+	if !model.runner.Timer.IsRunning {
+		t.Fatal("4h deep focus session did not start")
+	}
+}
+
+func TestDeepFocusPickerTabEnterUsesSelectedDuration(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("d"))
+	model = updated.(*Model)
+	if model.inputMode != modeDurationPicker {
+		t.Fatalf("d did not open duration picker; input mode = %v", model.inputMode)
+	}
+
+	for i := 0; i < 5 && model.selectedDurationIdx != 3; i++ {
+		updated, _ = model.Update(keyTab())
+		model = updated.(*Model)
+	}
+	if model.selectedDurationIdx != 3 {
+		t.Fatalf("tab selected duration index = %d, want 3 for 4h", model.selectedDurationIdx)
+	}
+
+	updated, _ = model.Update(keyEnter())
+	model = updated.(*Model)
+	if model.selectedMode != session.ModeDeep {
+		t.Fatalf("selected mode = %s, want deep", model.selectedMode)
+	}
+	if model.deepDuration != 4*time.Hour {
+		t.Fatalf("deep duration = %v, want 4h", model.deepDuration)
+	}
+	if model.runner.Timer.RemainingTime != 25*time.Minute {
+		t.Fatalf("first hidden segment = %v, want 25m", model.runner.Timer.RemainingTime)
+	}
+	if remaining := model.runner.Block.Remaining(model.runner.Timer.RemainingTime); remaining != 4*time.Hour {
+		t.Fatalf("deep block remaining = %v, want 4h", remaining)
+	}
+	if !strings.Contains(model.statusMessage, "240 min block") {
+		t.Fatalf("status message %q does not expose selected minutes", model.statusMessage)
+	}
+}
+
+func TestSoundPickerSelectsProfile(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("a"))
+	model = updated.(*Model)
+	if model.inputMode != modeSoundPicker {
+		t.Fatalf("a did not open sound picker; input mode = %v", model.inputMode)
+	}
+
+	updated, _ = model.Update(keyTab())
+	model = updated.(*Model)
+	updated, _ = model.Update(keyEnter())
+	model = updated.(*Model)
+
+	if model.inputMode != modeNone {
+		t.Fatalf("enter did not close sound picker; input mode = %v", model.inputMode)
+	}
+	if model.cfg.SoundStartEvent != "bell" || model.cfg.SoundEndEvent != "bell" {
+		t.Fatalf("sound config = %q/%q, want bell/bell", model.cfg.SoundStartEvent, model.cfg.SoundEndEvent)
+	}
+	start, end := model.notifier.SoundEvents()
+	if start != "bell" || end != "bell" {
+		t.Fatalf("notifier sound events = %q/%q, want bell/bell", start, end)
 	}
 }
 
@@ -152,7 +586,7 @@ func TestMultipleModels(t *testing.T) {
 	if m1 == m2 {
 		t.Error("Each NewModel should create a new instance")
 	}
-	if m1.session == m2.session {
+	if m1.runner.Timer == m2.runner.Timer {
 		t.Error("Each model should have its own session")
 	}
 }
@@ -162,30 +596,30 @@ func TestPhaseLabel(t *testing.T) {
 	model := NewModel(cfg)
 
 	// Idle state
-	label := phaseLabel(model.session)
+	label := phaseLabel(model.runner.Timer)
 	if label != "Focus Timer" {
 		t.Errorf("idle label = %q, want %q", label, "Focus Timer")
 	}
 
 	// Start a work session
-	_ = model.session.Start(timer.RealClock{})
-	label = phaseLabel(model.session)
+	_ = model.runner.Timer.Start(timer.RealClock{})
+	label = phaseLabel(model.runner.Timer)
 	if label != "Work" {
 		t.Errorf("work label = %q, want %q", label, "Work")
 	}
 
 	// Skip to short break
-	model.session.Skip()
-	label = phaseLabel(model.session)
+	model.runner.Timer.Skip()
+	label = phaseLabel(model.runner.Timer)
 	if label != "Short Break" {
 		t.Errorf("short break label = %q, want %q", label, "Short Break")
 	}
 }
 
 func TestBigClockRows(t *testing.T) {
-	rows := bigClockRows("00:00", lipgloss.Color("#ff0000"))
+	rows := render.BigClockRows("00:00", lipgloss.Color("#ff0000"))
 	if len(rows) != 5 {
-		t.Errorf("bigClockRows returned %d rows, want 5", len(rows))
+		t.Errorf("BigClockRows returned %d rows, want 5", len(rows))
 	}
 	for i, row := range rows {
 		if row == "" {
@@ -195,28 +629,28 @@ func TestBigClockRows(t *testing.T) {
 }
 
 func TestProgressBar(t *testing.T) {
-	bar := progressBar(0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	bar := render.ProgressBar(0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if bar == "" {
-		t.Error("progressBar returned empty string")
+		t.Error("ProgressBar returned empty string")
 	}
 
 	// Test edge cases
-	_ = progressBar(0.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(1.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(1.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
-	_ = progressBar(-0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(0.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(1.0, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(1.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	_ = render.ProgressBar(-0.5, 10, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 }
 
 func TestSessionDots(t *testing.T) {
-	dots := sessionDots(2, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	dots := render.SessionDots(2, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if dots == "" {
-		t.Error("sessionDots returned empty string")
+		t.Error("SessionDots returned empty string")
 	}
 
 	// Test zero completed
-	dots = sessionDots(0, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
+	dots = render.SessionDots(0, 4, lipgloss.Color("#ff0000"), lipgloss.Color("#333333"))
 	if dots == "" {
-		t.Error("sessionDots returned empty string for 0 completed")
+		t.Error("SessionDots returned empty string for 0 completed")
 	}
 }
 
@@ -422,5 +856,202 @@ func TestSuggestionsAndNavigation(t *testing.T) {
 	}
 	if model.suggestionIndex != -1 {
 		t.Errorf("expected suggestionIndex reset to -1, got %d", model.suggestionIndex)
+	}
+}
+
+func TestCombinationSweepNoPanics(t *testing.T) {
+	cfg := config.Default()
+	themes := []string{
+		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
+		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
+		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
+	}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice", "focus-stack", "command-center"}
+	sizes := []struct{ w, h int }{
+		{60, 18},
+		{200, 50},
+	}
+
+	for _, themeName := range themes {
+		for _, layoutName := range layouts {
+			for _, sz := range sizes {
+				model := NewModel(cfg)
+				model.width = sz.w
+				model.height = sz.h
+				model.currentThemeName = themeName
+				model.theme = theme.Get(themeName)
+				model.currentLayoutName = layoutName
+
+				// Test Quick Focus Running
+				_ = model.runner.Start(timer.RealClock{})
+				view := model.View()
+				if view == "" {
+					t.Errorf("empty render for theme %s, layout %s at %dx%d", themeName, layoutName, sz.w, sz.h)
+				}
+
+				// Test Deep Focus Running
+				blockD := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
+				model.runner = session.NewRunner(blockD)
+				model.selectedMode = session.ModeDeep
+				_ = model.runner.Start(timer.RealClock{})
+				viewD := model.View()
+				if viewD == "" {
+					t.Errorf("empty render (deep) for theme %s, layout %s at %dx%d", themeName, layoutName, sz.w, sz.h)
+				}
+			}
+		}
+	}
+}
+
+func TestGoldenLayouts(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"minimal", "centered", "compact", "retro"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Prj"
+			model.currentTask = "Tsk"
+			model.gitBranch = "feature/deep-work"
+
+			// Idle state
+			dsIdle := model.displayState()
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			gotIdle := layoutFunc(dsIdle, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_idle.golden", gotIdle)
+
+			// Running work state
+			_ = model.runner.Start(timer.RealClock{})
+			dsRun := model.displayState()
+			gotRun := layoutFunc(dsRun, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_work.golden", gotRun)
+
+			// Paused state
+			_ = model.runner.Timer.Pause(timer.RealClock{})
+			dsPause := model.displayState()
+			gotPause := layoutFunc(dsPause, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_paused.golden", gotPause)
+		})
+	}
+}
+
+func verifyGolden(t *testing.T, filename string, got string) {
+	goldenPath := filepath.Join("testdata", filename)
+	if os.Getenv("UPDATE_GOLDENS") != "" {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+		return
+	}
+	if _, err := os.Stat(goldenPath); os.IsNotExist(err) {
+		_ = os.MkdirAll("testdata", 0755)
+		_ = os.WriteFile(goldenPath, []byte(got), 0644)
+		return
+	}
+	wantBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("failed to read golden: %v", err)
+	}
+	want := string(wantBytes)
+	if got != want {
+		t.Errorf("output does not match golden %s", filename)
+	}
+}
+
+func TestGoldenZenLayouts(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "focus-stack", "command-center"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Prj"
+			model.currentTask = "Tsk"
+			model.zenMode = true
+			model.gitBranch = "feature/deep-work"
+
+			// Running state in Zen mode
+			_ = model.runner.Start(timer.RealClock{})
+			dsRun := model.displayState()
+			dsRun.Zen = true
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			gotRun := layoutFunc(dsRun, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_zen_work.golden", gotRun)
+		})
+	}
+}
+
+func TestRecapScreen(t *testing.T) {
+	cfg := config.Default()
+	model := NewModel(cfg)
+	model.width = 80
+	model.height = 24
+	model.selectedMode = session.ModeQuick
+
+	// Create mock recap info
+	info := screens.RecapInfo{
+		TotalFocused: 1*time.Hour + 30*time.Minute,
+		Segments:     3,
+		Breaks:       2,
+		Pauses:       1,
+		Streak:       5,
+		IsDeep:       true,
+		FocusScore:   8,
+	}
+
+	got := screens.Recap(80, 24, model.theme, info)
+	verifyGolden(t, "recap.golden", got)
+}
+
+func TestVerbLabelTaskKeywords(t *testing.T) {
+	tests := []struct {
+		task string
+		want string
+	}{
+		{"build docker image", "Building"},
+		{"fix compilation error", "Fixing"},
+		{"debug session runner", "Debugging"},
+		{"read specifications", "Reading"},
+		{"write tests", "Writing"},
+		{"learn bubble tea patterns", "Learning"},
+		{"design layouts system", "Designing"},
+		{"research particle fields", "Researching"},
+		{"random coding", "Focusing"},
+	}
+
+	for _, tt := range tests {
+		got := GetVerbForTask(tt.task)
+		if got != tt.want {
+			t.Errorf("GetVerbForTask(%q) = %q, want %q", tt.task, got, tt.want)
+		}
+	}
+}
+
+func TestGoldenProjectIcon(t *testing.T) {
+	cfg := config.Default()
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "focus-stack", "command-center"}
+
+	for _, lName := range layouts {
+		t.Run(lName, func(t *testing.T) {
+			model := NewModel(cfg)
+			model.width = 80
+			model.height = 24
+			model.currentLayoutName = lName
+			model.currentProjectName = "Fawz"
+			model.currentProjectIcon = "🐹"
+			model.currentTask = "build auth"
+			model.currentVerbLabel = "Building"
+			model.gitBranch = "feature/deep-work"
+
+			ds := model.displayState()
+			_, layoutFunc := render.ResolveLayout(lName, 80, 24)
+			got := layoutFunc(ds, model.theme, render.Frame{Width: 80, Height: 24})
+			verifyGolden(t, lName+"_project_icon.golden", got)
+		})
 	}
 }

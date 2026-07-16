@@ -9,20 +9,24 @@ import (
 
 // DayStats represents completed sessions for a single day.
 type DayStats struct {
-	Date  time.Time
-	Count int
+	Date    time.Time
+	Count   int
+	Minutes int
 }
 
 // Stats holds aggregated metrics.
 type Stats struct {
-	TodayCount     int
-	TodayMinutes   int
-	WeekCount      int
-	MonthCount     int
-	CurrentStreak  int
-	BestStreak     int
-	CompletionRate float64
-	WeekDays       [7]DayStats
+	TodayCount       int
+	TodayMinutes     int
+	WeekCount        int
+	WeekMinutes      int
+	MonthCount       int
+	CurrentStreak    int
+	BestStreak       int
+	CompletionRate   float64
+	WeekDays         [7]DayStats
+	LifetimeMinutes  int
+	LifetimeSessions int
 }
 
 // Calculate computes focus statistics from a list of sessions, optionally filtered by project name.
@@ -50,6 +54,7 @@ func Calculate(sessions []*store.Session, now time.Time, projectNameFilter ...st
 
 	// Map to keep track of completed sessions per day
 	completedPerDay := make(map[string]int)
+	completedMinsPerDay := make(map[string]int)
 	
 	var totalWorkSessions int
 	var completedWorkSessions int
@@ -69,11 +74,16 @@ func Calculate(sessions []*store.Session, now time.Time, projectNameFilter ...st
 
 		localDate := s.StartedAt.Local().Format("2006-01-02")
 		completedPerDay[localDate]++
+		mins := s.DurationSecs / 60
+		completedMinsPerDay[localDate] += mins
+
+		stats.LifetimeSessions++
+		stats.LifetimeMinutes += mins
 
 		// Today stats
 		if localDate == localToday {
 			stats.TodayCount++
-			stats.TodayMinutes += s.DurationSecs / 60
+			stats.TodayMinutes += mins
 		}
 
 		// Month stats (current calendar month)
@@ -87,11 +97,13 @@ func Calculate(sessions []*store.Session, now time.Time, projectNameFilter ...st
 		stats.CompletionRate = float64(completedWorkSessions) / float64(totalWorkSessions)
 	}
 
-	// Calculate last 7 days of WeekDays counts
+	// Calculate last 7 days of WeekDays counts & minutes
 	for i := 0; i < 7; i++ {
 		dateStr := stats.WeekDays[i].Date.Local().Format("2006-01-02")
 		stats.WeekDays[i].Count = completedPerDay[dateStr]
+		stats.WeekDays[i].Minutes = completedMinsPerDay[dateStr]
 		stats.WeekCount += stats.WeekDays[i].Count
+		stats.WeekMinutes += stats.WeekDays[i].Minutes
 	}
 
 	// Calculate streaks
@@ -152,4 +164,16 @@ func Calculate(sessions []*store.Session, now time.Time, projectNameFilter ...st
 	}
 
 	return stats
+}
+
+// CalculateFocusScore computes a focus rating from 1 to 10 based on session events.
+func CalculateFocusScore(pauses, skippedBreaks, abandonedSegments int) int {
+	score := 10 - pauses - skippedBreaks - 2*abandonedSegments
+	if score < 1 {
+		return 1
+	}
+	if score > 10 {
+		return 10
+	}
+	return score
 }

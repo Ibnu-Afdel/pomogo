@@ -23,10 +23,13 @@ func TestDefaultConfig(t *testing.T) {
 		{"Theme", cfg.Theme, "tokyo-night"},
 		{"NotificationsEnabled", cfg.NotificationsEnabled, true},
 		{"SoundEnabled", cfg.SoundEnabled, true},
+		{"SoundStartEvent", cfg.SoundStartEvent, "message-new-instant"},
+		{"SoundEndEvent", cfg.SoundEndEvent, "complete"},
 		{"PromptForNotes", cfg.PromptForNotes, true},
 		{"PauseOnLock", cfg.PauseOnLock, true},
 		{"PauseOnSuspend", cfg.PauseOnSuspend, true},
 		{"TerminalTitleEnabled", cfg.TerminalTitleEnabled, true},
+		{"QuickFocusAutoAdvance", cfg.QuickFocusAutoAdvance(), true},
 	}
 
 	for _, tt := range tests {
@@ -114,6 +117,18 @@ func TestValidate(t *testing.T) {
 				LongBreakDuration:       15,
 				SessionsBeforeLongBreak: 4,
 				Theme:                   "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Invalid layout",
+			cfg: &Config{
+				WorkDuration:            25,
+				ShortBreakDuration:      5,
+				LongBreakDuration:       15,
+				SessionsBeforeLongBreak: 4,
+				Theme:                   "tokyo-night",
+				Layout:                  "invalid-layout",
 			},
 			wantErr: true,
 		},
@@ -224,11 +239,61 @@ func TestWriteDefault(t *testing.T) {
 	}
 
 	content := string(data)
-	if !contains(content, "work_duration = 25") {
-		t.Errorf("Config file missing work_duration setting")
-	}
-	if !contains(content, "theme = \"tokyo-night\"") {
+	if !contains(content, "theme = \"daily\"") {
 		t.Errorf("Config file missing theme setting")
+	}
+	if !contains(content, "layout = \"daily\"") {
+		t.Errorf("Config file missing layout setting")
+	}
+	if !contains(content, "[quick_focus]") {
+		t.Errorf("Config file missing quick_focus section")
+	}
+	if !contains(content, "work_duration = 25") {
+		t.Errorf("Config file missing quick_focus work_duration setting")
+	}
+	if !contains(content, "sessions_before_long_break = 4") {
+		t.Errorf("Config file missing quick_focus sessions_before_long_break setting")
+	}
+	if !contains(content, "auto_advance = true") {
+		t.Errorf("Config file missing quick_focus auto_advance setting")
+	}
+	if !contains(content, "sound_start_event = \"message-new-instant\"") {
+		t.Errorf("Config file missing sound_start_event setting")
+	}
+	if !contains(content, "sound_end_event = \"complete\"") {
+		t.Errorf("Config file missing sound_end_event setting")
+	}
+	if !contains(content, "default_duration = 120") {
+		t.Errorf("Config file missing deep_focus default_duration setting")
+	}
+	if !contains(content, "long_break_duration = 15") {
+		t.Errorf("Config file missing deep_focus long_break_duration setting")
+	}
+	if !contains(content, "sessions_before_long_break = 4") {
+		t.Errorf("Config file missing deep_focus sessions_before_long_break setting")
+	}
+
+	quickIdx := strings.Index(content, "[quick_focus]")
+	deepIdx := strings.Index(content, "[deep_focus]")
+	if quickIdx < 0 || deepIdx < 0 || quickIdx > deepIdx {
+		t.Errorf("Config file should present quick_focus before deep_focus")
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Generated config should load: %v", err)
+	}
+	if loaded.Theme != "daily" || loaded.Layout != "daily" {
+		t.Errorf("Generated config identity = %q/%q, want daily/daily", loaded.Theme, loaded.Layout)
+	}
+	if got := loaded.DeepFocusDefaultDurationAsDuration(); got != 2*time.Hour {
+		t.Errorf("Generated deep focus default = %v, want 2h", got)
+	}
+	if got := loaded.DeepFocusLongBreakDurationAsDuration(); got != 15*time.Minute {
+		t.Errorf("Generated deep focus long break = %v, want 15m", got)
+	}
+	if got := loaded.DeepFocusSessionsBeforeLongBreak(); got != 4 {
+		t.Errorf("Generated deep focus sessions before long break = %d, want 4", got)
 	}
 }
 
@@ -346,7 +411,7 @@ func findSubstring(haystack, needle string) bool {
 
 func TestResolveProfile(t *testing.T) {
 	cfg := Default()
-	
+
 	// Create profiles
 	fifty := 50
 	ten := 10
@@ -397,5 +462,100 @@ func TestResolveProfile(t *testing.T) {
 	}
 	if soundEventNon != "" {
 		t.Errorf("expected empty sound event")
+	}
+}
+
+func TestModeSpecificConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := XDGConfigDir()
+	os.MkdirAll(configDir, 0755)
+	configFile := ConfigFilePath()
+
+	// 1. Test explicit configuration overriding top level
+	content := `
+work_duration = 25
+short_break_duration = 5
+theme = "gruvbox"
+
+[quick_focus]
+work_duration = 30
+short_break_duration = 6
+long_break_duration = 12
+
+[deep_focus]
+default_duration = 180
+work_duration = 90
+short_break_duration = 10
+long_break_duration = 20
+sessions_before_long_break = 3
+`
+	os.WriteFile(configFile, []byte(content), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.QuickFocusWorkDurationAsDuration() != 30*time.Minute {
+		t.Errorf("got QuickFocusWorkDuration %v, want 30m", cfg.QuickFocusWorkDurationAsDuration())
+	}
+	if cfg.QuickFocusShortBreakDurationAsDuration() != 6*time.Minute {
+		t.Errorf("got QuickFocusShortBreakDuration %v, want 6m", cfg.QuickFocusShortBreakDurationAsDuration())
+	}
+	if cfg.QuickFocusLongBreakDurationAsDuration() != 12*time.Minute {
+		t.Errorf("got QuickFocusLongBreakDuration %v, want 12m", cfg.QuickFocusLongBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusWorkDurationAsDuration() != 90*time.Minute {
+		t.Errorf("got DeepFocusWorkDuration %v, want 90m", cfg.DeepFocusWorkDurationAsDuration())
+	}
+	if cfg.DeepFocusShortBreakDurationAsDuration() != 10*time.Minute {
+		t.Errorf("got DeepFocusShortBreakDuration %v, want 10m", cfg.DeepFocusShortBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusLongBreakDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got DeepFocusLongBreakDuration %v, want 20m", cfg.DeepFocusLongBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusSessionsBeforeLongBreak() != 3 {
+		t.Errorf("got DeepFocusSessionsBeforeLongBreak %d, want 3", cfg.DeepFocusSessionsBeforeLongBreak())
+	}
+	if cfg.DeepFocusDefaultDurationAsDuration() != 180*time.Minute {
+		t.Errorf("got DeepFocusDefaultDuration %v, want 180m", cfg.DeepFocusDefaultDurationAsDuration())
+	}
+
+	// 2. Test fallbacks
+	contentFallback := `
+work_duration = 20
+short_break_duration = 4
+long_break_duration = 10
+sessions_before_long_break = 5
+`
+	os.WriteFile(configFile, []byte(contentFallback), 0644)
+
+	cfgFallback, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfgFallback.QuickFocusWorkDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got QuickFocusWorkDuration %v, want 20m fallback", cfgFallback.QuickFocusWorkDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusWorkDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got DeepFocusWorkDuration %v, want 20m fallback", cfgFallback.DeepFocusWorkDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusDefaultDurationAsDuration() != time.Hour {
+		t.Errorf("got DeepFocusDefaultDuration %v, want 1h fallback", cfgFallback.DeepFocusDefaultDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusLongBreakDurationAsDuration() != 10*time.Minute {
+		t.Errorf("got DeepFocusLongBreakDuration %v, want 10m fallback", cfgFallback.DeepFocusLongBreakDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusSessionsBeforeLongBreak() != 5 {
+		t.Errorf("got DeepFocusSessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.DeepFocusSessionsBeforeLongBreak())
+	}
+	if cfgFallback.QuickFocusSessionsBeforeLongBreak() != 5 {
+		t.Errorf("got SessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.QuickFocusSessionsBeforeLongBreak())
 	}
 }

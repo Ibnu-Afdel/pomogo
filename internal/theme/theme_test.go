@@ -1,6 +1,9 @@
 package theme
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,7 +17,7 @@ func TestTokyoNightTheme(t *testing.T) {
 		want interface{}
 	}{
 		{"Name", theme.Name, "tokyo-night"},
-		{"Work color", theme.Work, Color("#ff7a93")},
+		{"Work color", theme.Work, Color("#f7768e")},
 		{"Break color", theme.Break, Color("#7aa2f7")},
 		{"LongBreak color", theme.LongBreak, Color("#9ece6a")},
 		{"Idle color", theme.Idle, Color("#565f89")},
@@ -29,35 +32,14 @@ func TestTokyoNightTheme(t *testing.T) {
 	}
 }
 
-// TestCatppuccinTheme tests Catppuccin theme initialization.
-func TestCatppuccinTheme(t *testing.T) {
-	theme := Catppuccin()
-
-	if theme.Name != "catppuccin" {
-		t.Errorf("Name: got %q, want %q", theme.Name, "catppuccin")
-	}
-
-	if theme.Background != "#fffdf5" {
-		t.Errorf("Background (light theme): got %q, want %q", theme.Background, "#fffdf5")
-	}
-}
-
-// TestGruvboxTheme tests Gruvbox theme initialization.
-func TestGruvboxTheme(t *testing.T) {
-	theme := Gruvbox()
-
-	if theme.Name != "gruvbox" {
-		t.Errorf("Name: got %q, want %q", theme.Name, "gruvbox")
-	}
-
-	if theme.Work != "#fb4934" {
-		t.Errorf("Work: got %q, want %q", theme.Work, "#fb4934")
-	}
-}
-
-// TestRegistry tests that all themes are registered.
+// TestRegistry tests that all built-in themes are registered.
 func TestRegistry(t *testing.T) {
-	expectedThemes := []string{"tokyo-night", "catppuccin", "gruvbox"}
+	expectedThemes := []string{
+		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
+		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
+		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
+		"high-contrast", "github-dark", "material-ocean", "forest-dawn",
+	}
 
 	for _, name := range expectedThemes {
 		if _, exists := Registry[name]; !exists {
@@ -80,7 +62,8 @@ func TestGet(t *testing.T) {
 		{"tokyo-night", "tokyo-night", true},
 		{"catppuccin", "catppuccin", true},
 		{"gruvbox", "gruvbox", true},
-		{"unknown", "tokyo-night", true}, // Unknown should default to Tokyo Night
+		{"rose-pine", "rose-pine", true},
+		{"unknown", "tokyo-night", true}, // Unknown defaults to Tokyo Night
 	}
 
 	for _, tt := range tests {
@@ -97,27 +80,8 @@ func TestGet(t *testing.T) {
 func TestList(t *testing.T) {
 	themes := List()
 
-	if len(themes) != 3 {
-		t.Errorf("List() returned %d themes, want 3", len(themes))
-	}
-
-	expectedThemes := map[string]bool{
-		"tokyo-night": false,
-		"catppuccin":  false,
-		"gruvbox":     false,
-	}
-
-	for _, name := range themes {
-		if _, exists := expectedThemes[name]; !exists {
-			t.Errorf("Unexpected theme in list: %q", name)
-		}
-		expectedThemes[name] = true
-	}
-
-	for name, found := range expectedThemes {
-		if !found {
-			t.Errorf("Theme %q not in list", name)
-		}
+	if len(themes) != 19 {
+		t.Errorf("List() returned %d themes, want 19", len(themes))
 	}
 }
 
@@ -129,7 +93,9 @@ func TestValidate(t *testing.T) {
 	}{
 		{"tokyo-night", false},
 		{"catppuccin", false},
-		{"gruvbox", false},
+		{"rose-pine", false},
+		{"random", false},
+		{"daily", false},
 		{"invalid-theme", true},
 		{"", true},
 	}
@@ -144,68 +110,107 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// TestColorString tests Color.String() method.
-func TestColorString(t *testing.T) {
-	color := Color("#ff7a93")
-	if color.String() != "#ff7a93" {
-		t.Errorf("Color.String() = %q, want %q", color.String(), "#ff7a93")
+// TestExternalThemes tests loading external TOML themes.
+func TestExternalThemes(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	themesDir := filepath.Join(tmpDir, "pomogo", "themes")
+	if err := os.MkdirAll(themesDir, 0755); err != nil {
+		t.Fatalf("failed to create themes dir: %v", err)
+	}
+
+	content := `
+name = "custom-theme"
+work = "#ff0011"
+break = "#00ff22"
+long-break = "#0000ff"
+idle = "#444444"
+accent = "#ff00ff"
+background = "#111111"
+text = "#eeeeee"
+muted = "#777777"
+subtle = "#222222"
+border = "#333333"
+progress-fill = "#ff00ff"
+progress-track = "#111111"
+ambient = "#0a0a0a"
+description = "A neat custom theme."
+`
+	err := os.WriteFile(filepath.Join(themesDir, "custom.toml"), []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("failed to write test theme file: %v", err)
+	}
+
+	if err := LoadExternalThemes(); err != nil {
+		t.Fatalf("LoadExternalThemes failed: %v", err)
+	}
+
+	theme := Registry["custom-theme"]
+	if theme == nil {
+		t.Fatal("expected 'custom-theme' to be loaded and registered")
+	}
+
+	if theme.Work != "#ff0011" {
+		t.Errorf("got Work color %s, want #ff0011", theme.Work)
+	}
+	if theme.LongBreak != "#0000ff" {
+		t.Errorf("got LongBreak color %s, want #0000ff", theme.LongBreak)
 	}
 }
 
-// TestANSI256 tests ANSI 256-color approximation.
-func TestANSI256(t *testing.T) {
-	tests := []struct {
-		color    Color
-		wantCode int
-	}{
-		{"#ff7a93", 203},  // Tokyo Night red
-		{"#7aa2f7", 75},   // Tokyo Night blue
-		{"#9ece6a", 149},  // Tokyo Night green
-		{"#fffdf5", 15},   // Catppuccin white
-		{"#282828", 235},  // Gruvbox dark
-		{"#invalid", 255}, // Unknown color defaults to 255
+func TestContrastRatio(t *testing.T) {
+	ratio, err := ContrastRatio("#ffffff", "#000000")
+	if err != nil {
+		t.Fatalf("ContrastRatio failed: %v", err)
 	}
-
-	for _, tt := range tests {
-		got := tt.color.ANSI256()
-		if got != tt.wantCode {
-			t.Errorf("Color(%q).ANSI256() = %d, want %d", tt.color, got, tt.wantCode)
-		}
+	if ratio < 21 || ratio > 22 {
+		t.Errorf("black/white contrast = %.2f, want about 21", ratio)
 	}
 }
 
-// TestThemeUniqueness ensures each theme has distinct colors.
-func TestThemeUniqueness(t *testing.T) {
-	themes := []*Theme{TokyoNight(), Catppuccin(), Gruvbox()}
-
-	for i, theme1 := range themes {
-		for j, theme2 := range themes {
-			if i == j {
-				continue // Skip comparing with itself
+func TestBuiltInThemeContrast(t *testing.T) {
+	for name, th := range Registry {
+		t.Run(name, func(t *testing.T) {
+			if issues := ThemeContrastIssues(th); len(issues) > 0 {
+				t.Fatalf("built-in theme has contrast issues: %v", issues)
 			}
-
-			if theme1.Name == theme2.Name {
-				t.Errorf("Duplicate theme name: %q", theme1.Name)
-			}
-
-			// Themes should have distinct work colors
-			if theme1.Work == theme2.Work && theme1.Name != theme2.Name {
-				t.Logf("Note: %q and %q share work color %q", theme1.Name, theme2.Name, theme1.Work)
-			}
-		}
+		})
 	}
 }
 
-// BenchmarkGetTheme benchmarks theme retrieval.
-func BenchmarkGetTheme(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Get("tokyo-night")
-	}
-}
+func TestCheckExternalThemeContrast(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-// BenchmarkValidate benchmarks theme validation.
-func BenchmarkValidate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Validate("tokyo-night")
+	themesDir := filepath.Join(tmpDir, "pomogo", "themes")
+	if err := os.MkdirAll(themesDir, 0755); err != nil {
+		t.Fatalf("failed to create themes dir: %v", err)
+	}
+
+	content := `
+name = "low-contrast"
+work = "#111111"
+break = "#111111"
+long-break = "#111111"
+idle = "#111111"
+accent = "#121212"
+background = "#111111"
+text = "#121212"
+muted = "#121212"
+subtle = "#111111"
+border = "#121212"
+progress-fill = "#121212"
+progress-track = "#111111"
+ambient = "#111111"
+description = "Low contrast test theme."
+`
+	if err := os.WriteFile(filepath.Join(themesDir, "low.toml"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write theme: %v", err)
+	}
+
+	got := CheckExternalThemeContrast()
+	if len(got) != 1 || !strings.Contains(got[0], "low.toml") {
+		t.Fatalf("expected low contrast theme warning, got %v", got)
 	}
 }

@@ -20,11 +20,15 @@ type Config struct {
 	SessionsBeforeLongBreak int `toml:"sessions_before_long_break"`
 
 	// Display
-	Theme string `toml:"theme"`
+	Theme   string `toml:"theme"`
+	Layout  string `toml:"layout"`
+	Effects string `toml:"effects"`
 
 	// Notifications
-	NotificationsEnabled bool `toml:"notifications_enabled"`
-	SoundEnabled         bool `toml:"sound_enabled"`
+	NotificationsEnabled bool   `toml:"notifications_enabled"`
+	SoundEnabled         bool   `toml:"sound_enabled"`
+	SoundStartEvent      string `toml:"sound_start_event"`
+	SoundEndEvent        string `toml:"sound_end_event"`
 
 	// Notes
 	PromptForNotes bool `toml:"prompt_for_notes"`
@@ -33,15 +37,37 @@ type Config struct {
 	PauseOnLock          bool `toml:"pause_on_lock"`
 	PauseOnSuspend       bool `toml:"pause_on_suspend"`
 	TerminalTitleEnabled bool `toml:"terminal_title_enabled"`
+	ShowGit              bool `toml:"show_git"`
+	ShowTmux             bool `toml:"show_tmux"`
 
 	// Profiles
 	Profiles map[string]Profile `toml:"profiles"`
+
+	// Mode configurations
+	QuickFocus QuickFocusConfig `toml:"quick_focus"`
+	DeepFocus  DeepFocusConfig  `toml:"deep_focus"`
 
 	// Hooks
 	OnWorkStart  string `toml:"on_work_start"`
 	OnWorkEnd    string `toml:"on_work_end"`
 	OnBreakStart string `toml:"on_break_start"`
 	OnBreakEnd   string `toml:"on_break_end"`
+}
+
+type QuickFocusConfig struct {
+	WorkDuration            *int  `toml:"work_duration"`
+	ShortBreakDuration      *int  `toml:"short_break_duration"`
+	LongBreakDuration       *int  `toml:"long_break_duration"`
+	SessionsBeforeLongBreak *int  `toml:"sessions_before_long_break"`
+	AutoAdvance             *bool `toml:"auto_advance"`
+}
+
+type DeepFocusConfig struct {
+	WorkDuration            *int `toml:"work_duration"`
+	ShortBreakDuration      *int `toml:"short_break_duration"`
+	LongBreakDuration       *int `toml:"long_break_duration"`
+	SessionsBeforeLongBreak *int `toml:"sessions_before_long_break"`
+	DefaultDuration         *int `toml:"default_duration"`
 }
 
 // Profile represents a set of overrides for custom focus states.
@@ -51,6 +77,7 @@ type Profile struct {
 	LongBreakDuration       *int    `toml:"long_break_duration"`
 	SessionsBeforeLongBreak *int    `toml:"sessions_before_long_break"`
 	Theme                   *string `toml:"theme"`
+	Layout                  *string `toml:"layout"`
 	Project                 *string `toml:"project"`
 	SoundEvent              *string `toml:"sound_event"`
 }
@@ -63,12 +90,18 @@ func Default() *Config {
 		LongBreakDuration:       15,
 		SessionsBeforeLongBreak: 4,
 		Theme:                   "tokyo-night",
+		Layout:                  "classic",
+		Effects:                 "none",
 		NotificationsEnabled:    true,
 		SoundEnabled:            true,
+		SoundStartEvent:         "message-new-instant",
+		SoundEndEvent:           "complete",
 		PromptForNotes:          true,
 		PauseOnLock:             true,
 		PauseOnSuspend:          true,
 		TerminalTitleEnabled:    true,
+		ShowGit:                 true,
+		ShowTmux:                false,
 	}
 }
 
@@ -101,8 +134,6 @@ func DBFilePath() string {
 }
 
 // Load loads the configuration from the config file.
-// If the file does not exist, returns the default configuration.
-// If the file exists but is invalid, returns an error.
 func Load() (*Config, error) {
 	path := ConfigFilePath()
 
@@ -146,7 +177,54 @@ func (c *Config) Validate() error {
 	if c.Theme == "" {
 		return errors.New("theme must be set")
 	}
-	// Valid themes are checked elsewhere; we allow any string here for extensibility
+
+	validLayouts := map[string]bool{
+		"classic": true, "minimal": true, "centered": true,
+		"compact": true, "retro": true, "dashboard": true,
+		"monolith": true, "tinybar": true, "terminal-rice": true,
+		"focus-stack": true, "command-center": true,
+		"random": true, "daily": true,
+		"": true,
+	}
+	if !validLayouts[c.Layout] {
+		return fmt.Errorf("unknown layout: %q", c.Layout)
+	}
+
+	validEffects := map[string]bool{
+		"none": true, "stars": true, "snow": true, "rain": true, "embers": true, "scanline": true, "random": true, "": true,
+	}
+	if !validEffects[c.Effects] {
+		return fmt.Errorf("unknown effects: %q", c.Effects)
+	}
+
+	if c.QuickFocus.WorkDuration != nil && *c.QuickFocus.WorkDuration <= 0 {
+		return errors.New("quick_focus.work_duration must be positive")
+	}
+	if c.QuickFocus.ShortBreakDuration != nil && *c.QuickFocus.ShortBreakDuration <= 0 {
+		return errors.New("quick_focus.short_break_duration must be positive")
+	}
+	if c.QuickFocus.LongBreakDuration != nil && *c.QuickFocus.LongBreakDuration <= 0 {
+		return errors.New("quick_focus.long_break_duration must be positive")
+	}
+	if c.QuickFocus.SessionsBeforeLongBreak != nil && *c.QuickFocus.SessionsBeforeLongBreak <= 0 {
+		return errors.New("quick_focus.sessions_before_long_break must be positive")
+	}
+	if c.DeepFocus.WorkDuration != nil && *c.DeepFocus.WorkDuration <= 0 {
+		return errors.New("deep_focus.work_duration must be positive")
+	}
+	if c.DeepFocus.ShortBreakDuration != nil && *c.DeepFocus.ShortBreakDuration <= 0 {
+		return errors.New("deep_focus.short_break_duration must be positive")
+	}
+	if c.DeepFocus.LongBreakDuration != nil && *c.DeepFocus.LongBreakDuration <= 0 {
+		return errors.New("deep_focus.long_break_duration must be positive")
+	}
+	if c.DeepFocus.SessionsBeforeLongBreak != nil && *c.DeepFocus.SessionsBeforeLongBreak <= 0 {
+		return errors.New("deep_focus.sessions_before_long_break must be positive")
+	}
+	if c.DeepFocus.DefaultDuration != nil && *c.DeepFocus.DefaultDuration <= 0 {
+		return errors.New("deep_focus.default_duration must be positive")
+	}
+
 	return nil
 }
 
@@ -177,30 +255,38 @@ func WriteDefault() error {
 		return fmt.Errorf("config file already exists at %s", path)
 	}
 
-	// Create a default config with comments
+	// Create a default config with comments.
 	content := `# PomoGo Configuration
-# This file configures the Pomodoro timer behavior.
+# Quick Focus is for immediate 25/5 cycles.
+# Deep Focus is for longer blocks with the rhythm handled behind the scene.
 
-# Work session duration in minutes (default: 25)
+theme = "daily"
+layout = "daily"
+effects = "none"
+
+[quick_focus]
 work_duration = 25
-
-# Short break duration in minutes (default: 5)
 short_break_duration = 5
-
-# Long break duration in minutes (default: 15)
 long_break_duration = 15
-
-# Number of work sessions before a long break (default: 4)
 sessions_before_long_break = 4
+auto_advance = true
 
-# Theme: "tokyo-night", "catppuccin", or "gruvbox" (default: tokyo-night)
-theme = "tokyo-night"
+[deep_focus]
+# Default Deep Focus block duration in minutes.
+default_duration = 120
+# Internal rhythm for long blocks.
+work_duration = 25
+short_break_duration = 5
+long_break_duration = 15
+sessions_before_long_break = 4
 
 # Enable notifications on session transitions (default: true)
 notifications_enabled = true
 
 # Enable sound on session transitions via canberra-gtk-play (default: true)
 sound_enabled = true
+sound_start_event = "message-new-instant"
+sound_end_event = "complete"
 
 # Prompt for a brief note when completing a work session (default: true)
 prompt_for_notes = true
@@ -213,6 +299,12 @@ pause_on_suspend = true
 
 # Show the timer countdown in the terminal window title (default: true)
 terminal_title_enabled = true
+
+# Show current Git branch in layouts if repo is found (default: true)
+show_git = true
+
+# Show current tmux session in layouts if inside TMUX (default: false)
+show_tmux = false
 `
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -261,4 +353,74 @@ func (c *Config) ResolveProfile(name string) (*Config, string, string) {
 	}
 
 	return &resolved, project, soundEvent
+}
+
+func (c *Config) QuickFocusWorkDurationAsDuration() time.Duration {
+	if c.QuickFocus.WorkDuration != nil {
+		return time.Duration(*c.QuickFocus.WorkDuration) * time.Minute
+	}
+	return c.WorkDurationAsDuration()
+}
+
+func (c *Config) QuickFocusShortBreakDurationAsDuration() time.Duration {
+	if c.QuickFocus.ShortBreakDuration != nil {
+		return time.Duration(*c.QuickFocus.ShortBreakDuration) * time.Minute
+	}
+	return c.ShortBreakDurationAsDuration()
+}
+
+func (c *Config) QuickFocusLongBreakDurationAsDuration() time.Duration {
+	if c.QuickFocus.LongBreakDuration != nil {
+		return time.Duration(*c.QuickFocus.LongBreakDuration) * time.Minute
+	}
+	return c.LongBreakDurationAsDuration()
+}
+
+func (c *Config) QuickFocusSessionsBeforeLongBreak() int {
+	if c.QuickFocus.SessionsBeforeLongBreak != nil {
+		return *c.QuickFocus.SessionsBeforeLongBreak
+	}
+	return c.SessionsBeforeLongBreak
+}
+
+func (c *Config) QuickFocusAutoAdvance() bool {
+	if c.QuickFocus.AutoAdvance != nil {
+		return *c.QuickFocus.AutoAdvance
+	}
+	return true
+}
+
+func (c *Config) DeepFocusWorkDurationAsDuration() time.Duration {
+	if c.DeepFocus.WorkDuration != nil {
+		return time.Duration(*c.DeepFocus.WorkDuration) * time.Minute
+	}
+	return c.WorkDurationAsDuration()
+}
+
+func (c *Config) DeepFocusShortBreakDurationAsDuration() time.Duration {
+	if c.DeepFocus.ShortBreakDuration != nil {
+		return time.Duration(*c.DeepFocus.ShortBreakDuration) * time.Minute
+	}
+	return c.ShortBreakDurationAsDuration()
+}
+
+func (c *Config) DeepFocusLongBreakDurationAsDuration() time.Duration {
+	if c.DeepFocus.LongBreakDuration != nil {
+		return time.Duration(*c.DeepFocus.LongBreakDuration) * time.Minute
+	}
+	return c.QuickFocusLongBreakDurationAsDuration()
+}
+
+func (c *Config) DeepFocusSessionsBeforeLongBreak() int {
+	if c.DeepFocus.SessionsBeforeLongBreak != nil {
+		return *c.DeepFocus.SessionsBeforeLongBreak
+	}
+	return c.QuickFocusSessionsBeforeLongBreak()
+}
+
+func (c *Config) DeepFocusDefaultDurationAsDuration() time.Duration {
+	if c.DeepFocus.DefaultDuration != nil {
+		return time.Duration(*c.DeepFocus.DefaultDuration) * time.Minute
+	}
+	return time.Hour
 }

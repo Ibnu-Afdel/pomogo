@@ -9,24 +9,33 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 )
 
 // State represents the serialized state of a Pomodoro session.
 type State struct {
-	SessionState  string `json:"state"`          // "idle", "work", "short_break", "long_break"
-	SessionType   string `json:"session_type"`   // "work", "short_break", "long_break"
-	EndsAt        int64  `json:"ends_at"`        // Unix timestamp when current session ends
-	Paused        bool   `json:"paused"`         // Whether session is paused
-	RemainingSecs int    `json:"remaining_secs"` // Seconds remaining in current session
-	PID           int    `json:"pid"`            // Process ID of pomogo app
-	SessionCount  int    `json:"session_count"`  // Total sessions completed
-	UpdatedAt     int64  `json:"updated_at"`     // Timestamp of last update
-	StartedAt     int64  `json:"started_at"`     // Unix timestamp when current session started
-	TotalSecs     int    `json:"total_secs"`     // Total seconds in the current phase
-	Task          string `json:"task,omitempty"` // Active task description
-	ProjectID     *int64 `json:"project_id,omitempty"` // Active project ID
-	ProjectName   string `json:"project_name,omitempty"` // Active project name
+	Version            int    `json:"version"`                // 2 for v2 schema
+	Mode               string `json:"mode"`                   // "quick", "deep"
+	SessionState       string `json:"state"`                  // "idle", "work", "short_break", "long_break"
+	SessionType        string `json:"session_type"`           // "work", "short_break", "long_break"
+	EndsAt             int64  `json:"ends_at"`                // Unix timestamp when current session ends
+	Paused             bool   `json:"paused"`                 // Whether session is paused
+	RemainingSecs      int    `json:"remaining_secs"`         // Seconds remaining in current session
+	PID                int    `json:"pid"`                    // Process ID of pomogo app
+	SessionCount       int    `json:"session_count"`          // Total sessions completed
+	UpdatedAt          int64  `json:"updated_at"`             // Timestamp of last update
+	StartedAt          int64  `json:"started_at"`             // Unix timestamp when current session started
+	TotalSecs          int    `json:"total_secs"`             // Total seconds in the current phase
+	Task               string `json:"task,omitempty"`         // Active task description
+	ProjectID          *int64 `json:"project_id,omitempty"`   // Active project ID
+	ProjectName        string `json:"project_name,omitempty"` // Active project name
+	BlockEndsAt        int64  `json:"block_ends_at"`          // Unix timestamp when deep block ends
+	BlockRemainingSecs int    `json:"block_remaining_secs"`   // Total remaining block seconds
+	SegmentIndex       int    `json:"segment_index"`          // Current segment index
+	SegmentCount       int    `json:"segment_count"`          // Total segment count in deep block
+	BlockID            int64  `json:"block_id,omitempty"`     // Active database block ID
+	PlannedTotalSecs   int    `json:"planned_total_secs"`     // Planned total block seconds
 }
 
 // Manager handles reading and writing session state.
@@ -50,29 +59,50 @@ func NewManager() (*Manager, error) {
 }
 
 // Write atomically writes the session state to disk.
-func (m *Manager) Write(session *timer.Session, task string, projectID *int64, projectName string) error {
-	remaining := session.RemainingTime
-	if session.IsRunning && !session.IsPaused {
-		remaining = time.Until(session.EndsAt)
+func (m *Manager) Write(runner *session.Runner, task string, projectID *int64, projectName string, blockID ...*int64) error {
+	remaining := runner.Timer.RemainingTime
+	if runner.Timer.IsRunning && !runner.Timer.IsPaused {
+		remaining = time.Until(runner.Timer.EndsAt)
 		if remaining < 0 {
 			remaining = 0
 		}
 	}
 
+	var blockEndsAt int64
+	var blockRemainingSecs int
+	if runner.Block.Mode == session.ModeDeep {
+		blockRemaining := runner.Block.Remaining(remaining)
+		blockRemainingSecs = int(blockRemaining.Seconds())
+		blockEndsAt = time.Now().Add(blockRemaining).Unix()
+	}
+
+	var dbBlockID int64
+	if len(blockID) > 0 && blockID[0] != nil {
+		dbBlockID = *blockID[0]
+	}
+
 	state := State{
-		SessionState:  sessionStateString(session.State),
-		SessionType:   sessionPhaseString(session.Phase),
-		EndsAt:        session.EndsAt.Unix(),
-		Paused:        session.IsPaused,
-		RemainingSecs: int(remaining.Seconds()),
-		PID:           os.Getpid(),
-		SessionCount:  session.SessionCount,
-		UpdatedAt:     time.Now().Unix(),
-		StartedAt:     session.StartedAt.Unix(),
-		TotalSecs:     int(totalForPhase(session).Seconds()),
-		Task:          task,
-		ProjectID:     projectID,
-		ProjectName:   projectName,
+		Version:            2,
+		Mode:               string(runner.Block.Mode),
+		SessionState:       sessionStateString(runner.Timer.State),
+		SessionType:        sessionPhaseString(runner.Timer.Phase),
+		EndsAt:             runner.Timer.EndsAt.Unix(),
+		Paused:             runner.Timer.IsPaused,
+		RemainingSecs:      int(remaining.Seconds()),
+		PID:                os.Getpid(),
+		SessionCount:       runner.Timer.SessionCount,
+		UpdatedAt:          time.Now().Unix(),
+		StartedAt:          runner.Timer.StartedAt.Unix(),
+		TotalSecs:          int(runner.Block.CurrentSegment.Duration.Seconds()),
+		Task:               task,
+		ProjectID:          projectID,
+		ProjectName:        projectName,
+		BlockEndsAt:        blockEndsAt,
+		BlockRemainingSecs: blockRemainingSecs,
+		SegmentIndex:       runner.Block.Index,
+		SegmentCount:       len(runner.Block.Segments),
+		BlockID:            dbBlockID,
+		PlannedTotalSecs:   int(runner.Block.PlannedTotal.Seconds()),
 	}
 
 	// Marshal to JSON
@@ -173,7 +203,6 @@ func sessionPhaseString(phase timer.SessionPhase) string {
 }
 
 // IsStale checks if a state is stale (the stored PID is no longer running).
-// This is a simple check based on whether the PID can be found in the process table.
 func IsStale(state *State) bool {
 	if state == nil {
 		return true
@@ -187,21 +216,13 @@ func IsStale(state *State) bool {
 	return err == syscall.ESRCH
 }
 
-// IsExpired checks if a session state has expired based on EndsAt.
+// IsExpired checks if a session state has expired.
 func IsExpired(state *State) bool {
 	if state == nil {
 		return true
 	}
-	return time.Now().Unix() > state.EndsAt
-}
-
-func totalForPhase(session *timer.Session) time.Duration {
-	switch session.Phase {
-	case timer.PhaseShortBreak:
-		return session.ShortBreakDuration
-	case timer.PhaseLongBreak:
-		return session.LongBreakDuration
-	default:
-		return session.WorkDuration
+	if state.Mode == "deep" && state.BlockEndsAt > 0 {
+		return time.Now().Unix() > state.BlockEndsAt
 	}
+	return time.Now().Unix() > state.EndsAt
 }

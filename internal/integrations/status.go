@@ -42,9 +42,21 @@ func FormatStatus(state *statefile.State, format string) (string, error) {
 	}
 
 	// Active session format
-	mins := state.RemainingSecs / 60
-	secs := state.RemainingSecs % 60
-	timeStr := fmt.Sprintf("%02d:%02d", mins, secs)
+	var timeStr string
+	if state.Mode == "deep" && state.BlockRemainingSecs > 0 {
+		hrs := state.BlockRemainingSecs / 3600
+		mins := (state.BlockRemainingSecs % 3600) / 60
+		secs := state.BlockRemainingSecs % 60
+		if hrs > 0 {
+			timeStr = fmt.Sprintf("%d:%02d:%02d", hrs, mins, secs)
+		} else {
+			timeStr = fmt.Sprintf("%02d:%02d", mins, secs)
+		}
+	} else {
+		mins := state.RemainingSecs / 60
+		secs := state.RemainingSecs % 60
+		timeStr = fmt.Sprintf("%02d:%02d", mins, secs)
+	}
 
 	// Determine icon and class
 	var icon string
