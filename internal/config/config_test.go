@@ -27,6 +27,7 @@ func TestDefaultConfig(t *testing.T) {
 		{"PauseOnLock", cfg.PauseOnLock, true},
 		{"PauseOnSuspend", cfg.PauseOnSuspend, true},
 		{"TerminalTitleEnabled", cfg.TerminalTitleEnabled, true},
+		{"QuickFocusAutoAdvance", cfg.QuickFocusAutoAdvance(), true},
 	}
 
 	for _, tt := range tests {
@@ -242,6 +243,15 @@ func TestWriteDefault(t *testing.T) {
 	if !contains(content, "theme = \"tokyo-night\"") {
 		t.Errorf("Config file missing theme setting")
 	}
+	if !contains(content, "[quick_focus]") {
+		t.Errorf("Config file missing quick_focus section")
+	}
+	if !contains(content, "auto_advance = true") {
+		t.Errorf("Config file missing quick_focus auto_advance setting")
+	}
+	if !contains(content, "default_duration = 60") {
+		t.Errorf("Config file missing deep_focus default_duration setting")
+	}
 }
 
 // TestWriteDefaultExists tests WriteDefault when file already exists.
@@ -358,7 +368,7 @@ func findSubstring(haystack, needle string) bool {
 
 func TestResolveProfile(t *testing.T) {
 	cfg := Default()
-	
+
 	// Create profiles
 	fifty := 50
 	ten := 10
@@ -435,6 +445,7 @@ short_break_duration = 6
 long_break_duration = 12
 
 [deep_focus]
+default_duration = 180
 work_duration = 90
 short_break_duration = 10
 `
@@ -460,6 +471,9 @@ short_break_duration = 10
 	if cfg.DeepFocusShortBreakDurationAsDuration() != 10*time.Minute {
 		t.Errorf("got DeepFocusShortBreakDuration %v, want 10m", cfg.DeepFocusShortBreakDurationAsDuration())
 	}
+	if cfg.DeepFocusDefaultDurationAsDuration() != 180*time.Minute {
+		t.Errorf("got DeepFocusDefaultDuration %v, want 180m", cfg.DeepFocusDefaultDurationAsDuration())
+	}
 
 	// 2. Test fallbacks
 	contentFallback := `
@@ -480,6 +494,9 @@ sessions_before_long_break = 5
 	}
 	if cfgFallback.DeepFocusWorkDurationAsDuration() != 20*time.Minute {
 		t.Errorf("got DeepFocusWorkDuration %v, want 20m fallback", cfgFallback.DeepFocusWorkDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusDefaultDurationAsDuration() != time.Hour {
+		t.Errorf("got DeepFocusDefaultDuration %v, want 1h fallback", cfgFallback.DeepFocusDefaultDurationAsDuration())
 	}
 	if cfgFallback.QuickFocusSessionsBeforeLongBreak() != 5 {
 		t.Errorf("got SessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.QuickFocusSessionsBeforeLongBreak())

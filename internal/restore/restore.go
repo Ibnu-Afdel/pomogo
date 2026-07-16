@@ -85,8 +85,19 @@ func RestoreWithDurations(work, shortBreak, longBreak time.Duration, sessionsBef
 	return sessionObj, remainingTime, nil
 }
 
+// Durations contains mode-specific timing values used to reconstruct a saved runner.
+type Durations struct {
+	QuickWork                    time.Duration
+	QuickShortBreak              time.Duration
+	QuickLongBreak               time.Duration
+	QuickSessionsBeforeLongBreak int
+	QuickAutoAdvance             bool
+	DeepWork                     time.Duration
+	DeepShortBreak               time.Duration
+}
+
 // RestoreRunnerWithDurations reconstructs the runner and its block plan from state.
-func RestoreRunnerWithDurations(work, shortBreak, longBreak time.Duration, sessionsBeforeLongBreak int) (*session.Runner, error) {
+func RestoreRunnerWithDurations(d Durations) (*session.Runner, error) {
 	manager, err := statefile.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state manager: %w", err)
@@ -109,13 +120,13 @@ func RestoreRunnerWithDurations(work, shortBreak, longBreak time.Duration, sessi
 	var block *session.Block
 	if state.Mode == "deep" {
 		plannedTotal := time.Duration(state.PlannedTotalSecs) * time.Second
-		block = session.NewDeepBlock(plannedTotal, work, shortBreak, true)
+		block = session.NewDeepBlock(plannedTotal, d.DeepWork, d.DeepShortBreak, true)
 		block.Index = state.SegmentIndex
 		if block.Index >= 0 && block.Index < len(block.Segments) {
 			block.CurrentSegment = block.Segments[block.Index]
 		}
 	} else {
-		block = session.NewQuickBlock(work, shortBreak, longBreak, sessionsBeforeLongBreak, false)
+		block = session.NewQuickBlock(d.QuickWork, d.QuickShortBreak, d.QuickLongBreak, d.QuickSessionsBeforeLongBreak, d.QuickAutoAdvance)
 		block.SessionCount = state.SessionCount
 		var kind session.SegmentKind
 		switch state.SessionType {
@@ -129,11 +140,11 @@ func RestoreRunnerWithDurations(work, shortBreak, longBreak time.Duration, sessi
 		var dur time.Duration
 		switch kind {
 		case session.SegmentKindWork:
-			dur = work
+			dur = d.QuickWork
 		case session.SegmentKindShortBreak:
-			dur = shortBreak
+			dur = d.QuickShortBreak
 		case session.SegmentKindLongBreak:
-			dur = longBreak
+			dur = d.QuickLongBreak
 		}
 		block.CurrentSegment = session.Segment{Kind: kind, Duration: dur}
 	}

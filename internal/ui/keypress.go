@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Ibnu-Afdel/pomogo/internal/restore"
 	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -51,7 +51,12 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.selectedDurationIdx >= 0 && m.selectedDurationIdx <= 3 {
 				m.deepDuration = time.Duration(m.selectedDurationIdx+1) * time.Hour
-				block := session.NewDeepBlock(m.deepDuration, m.cfg.WorkDurationAsDuration(), m.cfg.ShortBreakDurationAsDuration(), true)
+				block := session.NewDeepBlock(
+					m.deepDuration,
+					m.cfg.DeepFocusWorkDurationAsDuration(),
+					m.cfg.DeepFocusShortBreakDurationAsDuration(),
+					true,
+				)
 				m.runner = session.NewRunner(block)
 				m.selectedMode = session.ModeDeep
 				m.inputMode = modeNone
@@ -79,7 +84,12 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.deepDuration = d
-			block := session.NewDeepBlock(m.deepDuration, m.cfg.WorkDurationAsDuration(), m.cfg.ShortBreakDurationAsDuration(), true)
+			block := session.NewDeepBlock(
+				m.deepDuration,
+				m.cfg.DeepFocusWorkDurationAsDuration(),
+				m.cfg.DeepFocusShortBreakDurationAsDuration(),
+				true,
+			)
 			m.runner = session.NewRunner(block)
 			m.selectedMode = session.ModeDeep
 			m.inputMode = modeNone
@@ -93,7 +103,13 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.runner.Timer.IsRunning && !m.runner.Timer.IsPaused {
 		switch msg.String() {
 		case "q":
-			block := session.NewQuickBlock(m.cfg.WorkDurationAsDuration(), m.cfg.ShortBreakDurationAsDuration(), m.cfg.LongBreakDurationAsDuration(), m.cfg.SessionsBeforeLongBreak, false)
+			block := session.NewQuickBlock(
+				m.cfg.QuickFocusWorkDurationAsDuration(),
+				m.cfg.QuickFocusShortBreakDurationAsDuration(),
+				m.cfg.QuickFocusLongBreakDurationAsDuration(),
+				m.cfg.QuickFocusSessionsBeforeLongBreak(),
+				m.cfg.QuickFocusAutoAdvance(),
+			)
 			m.runner = session.NewRunner(block)
 			m.selectedMode = session.ModeQuick
 			m.statusMessage = "quick focus mode selected"
@@ -278,12 +294,15 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		runner, err := restore.RestoreRunnerWithDurations(
-			m.cfg.WorkDurationAsDuration(),
-			m.cfg.ShortBreakDurationAsDuration(),
-			m.cfg.LongBreakDurationAsDuration(),
-			m.cfg.SessionsBeforeLongBreak,
-		)
+		runner, err := restore.RestoreRunnerWithDurations(restore.Durations{
+			QuickWork:                    m.cfg.QuickFocusWorkDurationAsDuration(),
+			QuickShortBreak:              m.cfg.QuickFocusShortBreakDurationAsDuration(),
+			QuickLongBreak:               m.cfg.QuickFocusLongBreakDurationAsDuration(),
+			QuickSessionsBeforeLongBreak: m.cfg.QuickFocusSessionsBeforeLongBreak(),
+			QuickAutoAdvance:             m.cfg.QuickFocusAutoAdvance(),
+			DeepWork:                     m.cfg.DeepFocusWorkDurationAsDuration(),
+			DeepShortBreak:               m.cfg.DeepFocusShortBreakDurationAsDuration(),
+		})
 		if err != nil {
 			m.restorePending = false
 			m.statusMessage = fmt.Sprintf("restore failed: %v", err)

@@ -89,6 +89,32 @@ func TestRead(t *testing.T) {
 	}
 }
 
+func TestWriteWithBlockID(t *testing.T) {
+	useTempRuntimeDir(t)
+	manager, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	defer manager.Remove()
+
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+	runner := session.NewRunner(block)
+	runner.Start(timer.RealClock{})
+	blockID := int64(42)
+
+	if err := manager.Write(runner, "Deep Task", nil, "Deep Project", &blockID); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	state, err := manager.Read()
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if state.BlockID != blockID {
+		t.Errorf("BlockID = %d, want %d", state.BlockID, blockID)
+	}
+}
+
 // TestReadNonexistent tests reading when file doesn't exist.
 func TestReadNonexistent(t *testing.T) {
 	useTempRuntimeDir(t)

@@ -57,11 +57,13 @@ type QuickFocusConfig struct {
 	ShortBreakDuration      *int  `toml:"short_break_duration"`
 	LongBreakDuration       *int  `toml:"long_break_duration"`
 	SessionsBeforeLongBreak *int  `toml:"sessions_before_long_break"`
+	AutoAdvance             *bool `toml:"auto_advance"`
 }
 
 type DeepFocusConfig struct {
-	WorkDuration       *int  `toml:"work_duration"`
-	ShortBreakDuration *int  `toml:"short_break_duration"`
+	WorkDuration       *int `toml:"work_duration"`
+	ShortBreakDuration *int `toml:"short_break_duration"`
+	DefaultDuration    *int `toml:"default_duration"`
 }
 
 // Profile represents a set of overrides for custom focus states.
@@ -204,6 +206,9 @@ func (c *Config) Validate() error {
 	if c.DeepFocus.ShortBreakDuration != nil && *c.DeepFocus.ShortBreakDuration <= 0 {
 		return errors.New("deep_focus.short_break_duration must be positive")
 	}
+	if c.DeepFocus.DefaultDuration != nil && *c.DeepFocus.DefaultDuration <= 0 {
+		return errors.New("deep_focus.default_duration must be positive")
+	}
 
 	return nil
 }
@@ -259,6 +264,17 @@ layout = "classic"
 
 # Effects: "none", "stars", "snow", "rain", "random" (default: none)
 effects = "none"
+
+[quick_focus]
+# Continue automatically from focus to break and back again (default: true)
+auto_advance = true
+
+[deep_focus]
+# Default Deep Focus block duration in minutes (default: 60)
+default_duration = 60
+# Internal segment durations for long blocks
+work_duration = 25
+short_break_duration = 5
 
 
 # Enable notifications on session transitions (default: true)
@@ -362,6 +378,13 @@ func (c *Config) QuickFocusSessionsBeforeLongBreak() int {
 	return c.SessionsBeforeLongBreak
 }
 
+func (c *Config) QuickFocusAutoAdvance() bool {
+	if c.QuickFocus.AutoAdvance != nil {
+		return *c.QuickFocus.AutoAdvance
+	}
+	return true
+}
+
 func (c *Config) DeepFocusWorkDurationAsDuration() time.Duration {
 	if c.DeepFocus.WorkDuration != nil {
 		return time.Duration(*c.DeepFocus.WorkDuration) * time.Minute
@@ -374,4 +397,11 @@ func (c *Config) DeepFocusShortBreakDurationAsDuration() time.Duration {
 		return time.Duration(*c.DeepFocus.ShortBreakDuration) * time.Minute
 	}
 	return c.ShortBreakDurationAsDuration()
+}
+
+func (c *Config) DeepFocusDefaultDurationAsDuration() time.Duration {
+	if c.DeepFocus.DefaultDuration != nil {
+		return time.Duration(*c.DeepFocus.DefaultDuration) * time.Minute
+	}
+	return time.Hour
 }

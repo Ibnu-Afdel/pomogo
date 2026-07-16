@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Ibnu-Afdel/pomogo/internal/integrations"
 	"github.com/Ibnu-Afdel/pomogo/internal/session"
 	"github.com/Ibnu-Afdel/pomogo/internal/store"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type tickMsg struct{ time time.Time }
@@ -92,6 +92,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.inputMode = modeRecapScreen
 				}
 				m.afterTransition(true)
+				if m.runner.Timer.IsRunning && !m.runner.Timer.IsPaused {
+					return m, tea.Batch(titleCmd, m.tick1s())
+				}
 				return m, titleCmd
 			}
 		}

@@ -163,6 +163,38 @@ func TestRunnerQuickMode(t *testing.T) {
 	}
 }
 
+func TestRunnerQuickModeAutoAdvance(t *testing.T) {
+	block := NewQuickBlock(25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
+	runner := NewRunner(block)
+	clock := &mockClock{now: time.Now()}
+
+	_ = runner.Start(clock)
+
+	clock.now = clock.now.Add(25 * time.Minute)
+	evt, ended := runner.Tick(clock)
+	if !ended || evt.Type != EventSegmentEnded {
+		t.Fatal("Should trigger SegmentEnded event")
+	}
+	if runner.Block.CurrentSegment.Kind != SegmentKindShortBreak {
+		t.Errorf("next segment kind is %s, want Short Break", runner.Block.CurrentSegment.Kind)
+	}
+	if !runner.Timer.IsRunning {
+		t.Error("Timer should keep running with AutoAdvance")
+	}
+
+	clock.now = clock.now.Add(5 * time.Minute)
+	evt, ended = runner.Tick(clock)
+	if !ended || evt.Type != EventSegmentEnded {
+		t.Fatal("Should trigger break SegmentEnded event")
+	}
+	if runner.Block.CurrentSegment.Kind != SegmentKindWork {
+		t.Errorf("next segment kind is %s, want Work", runner.Block.CurrentSegment.Kind)
+	}
+	if !runner.Timer.IsRunning {
+		t.Error("Timer should keep running into the next work segment")
+	}
+}
+
 func TestRunnerDeepModeAutoAdvance(t *testing.T) {
 	block := NewDeepBlock(60*time.Minute, 25*time.Minute, 5*time.Minute, true)
 	runner := NewRunner(block)

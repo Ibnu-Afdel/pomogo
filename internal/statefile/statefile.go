@@ -15,27 +15,27 @@ import (
 
 // State represents the serialized state of a Pomodoro session.
 type State struct {
-	Version            int    `json:"version"`           // 2 for v2 schema
-	Mode               string `json:"mode"`              // "quick", "deep"
-	SessionState       string `json:"state"`             // "idle", "work", "short_break", "long_break"
-	SessionType        string `json:"session_type"`      // "work", "short_break", "long_break"
-	EndsAt             int64  `json:"ends_at"`           // Unix timestamp when current session ends
-	Paused             bool   `json:"paused"`            // Whether session is paused
-	RemainingSecs      int    `json:"remaining_secs"`    // Seconds remaining in current session
-	PID                int    `json:"pid"`               // Process ID of pomogo app
-	SessionCount       int    `json:"session_count"`     // Total sessions completed
-	UpdatedAt          int64  `json:"updated_at"`        // Timestamp of last update
-	StartedAt          int64  `json:"started_at"`        // Unix timestamp when current session started
-	TotalSecs          int    `json:"total_secs"`        // Total seconds in the current phase
-	Task               string `json:"task,omitempty"`    // Active task description
-	ProjectID          *int64 `json:"project_id,omitempty"` // Active project ID
+	Version            int    `json:"version"`                // 2 for v2 schema
+	Mode               string `json:"mode"`                   // "quick", "deep"
+	SessionState       string `json:"state"`                  // "idle", "work", "short_break", "long_break"
+	SessionType        string `json:"session_type"`           // "work", "short_break", "long_break"
+	EndsAt             int64  `json:"ends_at"`                // Unix timestamp when current session ends
+	Paused             bool   `json:"paused"`                 // Whether session is paused
+	RemainingSecs      int    `json:"remaining_secs"`         // Seconds remaining in current session
+	PID                int    `json:"pid"`                    // Process ID of pomogo app
+	SessionCount       int    `json:"session_count"`          // Total sessions completed
+	UpdatedAt          int64  `json:"updated_at"`             // Timestamp of last update
+	StartedAt          int64  `json:"started_at"`             // Unix timestamp when current session started
+	TotalSecs          int    `json:"total_secs"`             // Total seconds in the current phase
+	Task               string `json:"task,omitempty"`         // Active task description
+	ProjectID          *int64 `json:"project_id,omitempty"`   // Active project ID
 	ProjectName        string `json:"project_name,omitempty"` // Active project name
-	BlockEndsAt        int64  `json:"block_ends_at"`     // Unix timestamp when deep block ends
-	BlockRemainingSecs int    `json:"block_remaining_secs"` // Total remaining block seconds
-	SegmentIndex       int    `json:"segment_index"`     // Current segment index
-	SegmentCount       int    `json:"segment_count"`     // Total segment count in deep block
-	BlockID            int64  `json:"block_id,omitempty"` // Active database block ID
-	PlannedTotalSecs   int    `json:"planned_total_secs"` // Planned total block seconds
+	BlockEndsAt        int64  `json:"block_ends_at"`          // Unix timestamp when deep block ends
+	BlockRemainingSecs int    `json:"block_remaining_secs"`   // Total remaining block seconds
+	SegmentIndex       int    `json:"segment_index"`          // Current segment index
+	SegmentCount       int    `json:"segment_count"`          // Total segment count in deep block
+	BlockID            int64  `json:"block_id,omitempty"`     // Active database block ID
+	PlannedTotalSecs   int    `json:"planned_total_secs"`     // Planned total block seconds
 }
 
 // Manager handles reading and writing session state.
@@ -59,7 +59,7 @@ func NewManager() (*Manager, error) {
 }
 
 // Write atomically writes the session state to disk.
-func (m *Manager) Write(runner *session.Runner, task string, projectID *int64, projectName string) error {
+func (m *Manager) Write(runner *session.Runner, task string, projectID *int64, projectName string, blockID ...*int64) error {
 	remaining := runner.Timer.RemainingTime
 	if runner.Timer.IsRunning && !runner.Timer.IsPaused {
 		remaining = time.Until(runner.Timer.EndsAt)
@@ -77,7 +77,9 @@ func (m *Manager) Write(runner *session.Runner, task string, projectID *int64, p
 	}
 
 	var dbBlockID int64
-	// In model.go, we write block ID; we can check it. But we just write planned total.
+	if len(blockID) > 0 && blockID[0] != nil {
+		dbBlockID = *blockID[0]
+	}
 
 	state := State{
 		Version:            2,

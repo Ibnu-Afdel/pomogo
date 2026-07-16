@@ -95,6 +95,7 @@ func TestGoldenClassicRender(t *testing.T) {
 	model.height = 24
 	model.currentProjectName = "TestProject"
 	model.currentTask = "TestTask"
+	model.gitBranch = "feature/deep-work"
 
 	// Run the render
 	ds := model.displayState()
@@ -133,12 +134,13 @@ func TestGoldenDeepClassicRender(t *testing.T) {
 	model.height = 24
 	model.currentProjectName = "DeepProject"
 	model.currentTask = "DeepTask"
+	model.gitBranch = "feature/deep-work"
 
 	// Select Deep Focus
 	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
 	model.runner = session.NewRunner(block)
 	model.selectedMode = session.ModeDeep
-	
+
 	// Start the runner so it is running Work
 	_ = model.runner.Start(timer.RealClock{})
 
@@ -592,6 +594,7 @@ func TestGoldenLayouts(t *testing.T) {
 			model.currentLayoutName = lName
 			model.currentProjectName = "Prj"
 			model.currentTask = "Tsk"
+			model.gitBranch = "feature/deep-work"
 
 			// Idle state
 			dsIdle := model.displayState()
@@ -649,6 +652,7 @@ func TestGoldenZenLayouts(t *testing.T) {
 			model.currentProjectName = "Prj"
 			model.currentTask = "Tsk"
 			model.zenMode = true
+			model.gitBranch = "feature/deep-work"
 
 			// Running state in Zen mode
 			_ = model.runner.Start(timer.RealClock{})
@@ -667,7 +671,7 @@ func TestRecapScreen(t *testing.T) {
 	model.width = 80
 	model.height = 24
 	model.selectedMode = session.ModeQuick
-	
+
 	// Create mock recap info
 	info := screens.RecapInfo{
 		TotalFocused: 1*time.Hour + 30*time.Minute,
@@ -719,6 +723,7 @@ func TestGoldenProjectIcon(t *testing.T) {
 			model.currentProjectIcon = "🐹"
 			model.currentTask = "build auth"
 			model.currentVerbLabel = "Building"
+			model.gitBranch = "feature/deep-work"
 
 			ds := model.displayState()
 			_, layoutFunc := render.ResolveLayout(lName, 80, 24)

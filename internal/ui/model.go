@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/Ibnu-Afdel/pomogo/internal/config"
 	"github.com/Ibnu-Afdel/pomogo/internal/devinfo"
 	"github.com/Ibnu-Afdel/pomogo/internal/notify"
@@ -21,6 +19,8 @@ import (
 	"github.com/Ibnu-Afdel/pomogo/internal/theme"
 	"github.com/Ibnu-Afdel/pomogo/internal/timer"
 	"github.com/Ibnu-Afdel/pomogo/internal/ui/screens"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type inputModeType int
@@ -37,12 +37,12 @@ const (
 
 // Model is the main Bubble Tea model for the PomoGo TUI.
 type Model struct {
-	runner         *session.Runner
-	cfg            *config.Config
-	theme          *theme.Theme
-	width          int
-	height         int
-	keymap         KeyMap
+	runner *session.Runner
+	cfg    *config.Config
+	theme  *theme.Theme
+	width  int
+	height int
+	keymap KeyMap
 
 	notifier       *notify.Notifier
 	stateManager   *statefile.Manager
@@ -51,18 +51,18 @@ type Model struct {
 	showHelp       bool
 	statusMessage  string
 
-	textInput      textinput.Model
-	inputMode      inputModeType
-	currentTask        string
-	pendingSession     *store.Session
-	showStats          bool
-	lastTickTime       time.Time
-	currentProjectID   *int64
-	currentProjectName string
-	suggestions        []string
+	textInput           textinput.Model
+	inputMode           inputModeType
+	currentTask         string
+	pendingSession      *store.Session
+	showStats           bool
+	lastTickTime        time.Time
+	currentProjectID    *int64
+	currentProjectName  string
+	suggestions         []string
 	filteredSuggestions []string
-	suggestionIndex    int
-	lastHookState      timer.SessionState
+	suggestionIndex     int
+	lastHookState       timer.SessionState
 
 	// Mode selection fields
 	selectedMode        session.Mode
@@ -71,15 +71,15 @@ type Model struct {
 	currentBlockID      *int64
 
 	// Theme & Layout fields
-	currentThemeName    string
-	currentLayoutName   string
-	currentEffectsName  string
-	zenMode             bool
-	tickCount           int
-	currentProjectIcon  string
-	currentVerbLabel    string
-	gitBranch           string
-	tmuxSession         string
+	currentThemeName   string
+	currentLayoutName  string
+	currentEffectsName string
+	zenMode            bool
+	tickCount          int
+	currentProjectIcon string
+	currentVerbLabel   string
+	gitBranch          string
+	tmuxSession        string
 }
 
 // NewModel creates a new TUI model.
@@ -124,11 +124,11 @@ func NewModel(cfg *config.Config) *Model {
 	}
 
 	block := session.NewQuickBlock(
-		cfg.WorkDurationAsDuration(),
-		cfg.ShortBreakDurationAsDuration(),
-		cfg.LongBreakDurationAsDuration(),
-		cfg.SessionsBeforeLongBreak,
-		false,
+		cfg.QuickFocusWorkDurationAsDuration(),
+		cfg.QuickFocusShortBreakDurationAsDuration(),
+		cfg.QuickFocusLongBreakDurationAsDuration(),
+		cfg.QuickFocusSessionsBeforeLongBreak(),
+		cfg.QuickFocusAutoAdvance(),
 	)
 
 	return &Model{
@@ -150,7 +150,7 @@ func NewModel(cfg *config.Config) *Model {
 		currentProjectName:  projectName,
 		selectedMode:        session.ModeQuick,
 		selectedDurationIdx: 0,
-		deepDuration:        1 * time.Hour,
+		deepDuration:        cfg.DeepFocusDefaultDurationAsDuration(),
 		currentThemeName:    resolvedTheme,
 		currentLayoutName:   resolvedLayout,
 		currentEffectsName:  resolvedEffects,
@@ -367,7 +367,7 @@ func (m *Model) writeState() {
 	if m.stateManager == nil {
 		return
 	}
-	if err := m.stateManager.Write(m.runner, m.currentTask, m.currentProjectID, m.currentProjectName); err != nil {
+	if err := m.stateManager.Write(m.runner, m.currentTask, m.currentProjectID, m.currentProjectName, m.currentBlockID); err != nil {
 		m.statusMessage = fmt.Sprintf("statefile error: %v", err)
 	}
 }

@@ -216,7 +216,15 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	restoredQ, err := RestoreRunnerWithDurations(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	restoredQ, err := RestoreRunnerWithDurations(Durations{
+		QuickWork:                    25 * time.Minute,
+		QuickShortBreak:              5 * time.Minute,
+		QuickLongBreak:               15 * time.Minute,
+		QuickSessionsBeforeLongBreak: 4,
+		QuickAutoAdvance:             true,
+		DeepWork:                     50 * time.Minute,
+		DeepShortBreak:               10 * time.Minute,
+	})
 	if err != nil {
 		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
 	}
@@ -226,9 +234,12 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 	if restoredQ.Timer.SessionCount != 2 {
 		t.Errorf("expected SessionCount 2, got %d", restoredQ.Timer.SessionCount)
 	}
+	if !restoredQ.Block.AutoAdvance {
+		t.Error("expected restored quick block to preserve configured auto advance")
+	}
 
 	// 2. Test Deep Focus Restore
-	blockD := session.NewDeepBlock(60*time.Minute, 25*time.Minute, 5*time.Minute, true)
+	blockD := session.NewDeepBlock(120*time.Minute, 25*time.Minute, 5*time.Minute, true)
 	runnerD := session.NewRunner(blockD)
 	runnerD.Start(timer.RealClock{})
 
@@ -236,15 +247,26 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	restoredD, err := RestoreRunnerWithDurations(25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	restoredD, err := RestoreRunnerWithDurations(Durations{
+		QuickWork:                    25 * time.Minute,
+		QuickShortBreak:              5 * time.Minute,
+		QuickLongBreak:               15 * time.Minute,
+		QuickSessionsBeforeLongBreak: 4,
+		QuickAutoAdvance:             true,
+		DeepWork:                     50 * time.Minute,
+		DeepShortBreak:               10 * time.Minute,
+	})
 	if err != nil {
 		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
 	}
 	if restoredD.Block.Mode != session.ModeDeep {
 		t.Errorf("expected mode deep, got %s", restoredD.Block.Mode)
 	}
-	if restoredD.Block.PlannedTotal != 60*time.Minute {
-		t.Errorf("expected PlannedTotal 60m, got %v", restoredD.Block.PlannedTotal)
+	if restoredD.Block.PlannedTotal != 120*time.Minute {
+		t.Errorf("expected PlannedTotal 120m, got %v", restoredD.Block.PlannedTotal)
+	}
+	if restoredD.Block.Segments[0].Duration != 50*time.Minute {
+		t.Errorf("expected deep restore to use configured 50m work duration, got %v", restoredD.Block.Segments[0].Duration)
 	}
 }
 
