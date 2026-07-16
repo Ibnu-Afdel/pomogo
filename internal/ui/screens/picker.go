@@ -10,11 +10,18 @@ import (
 )
 
 // DurationPicker renders the Deep Focus duration selection screen.
-func DurationPicker(width, height int, th *theme.Theme, selectedIdx int, defaultDuration, workDuration, breakDuration time.Duration) string {
+func DurationPicker(width, height int, th *theme.Theme, selectedIdx int, defaultDuration, workDuration, shortBreakDuration, longBreakDuration time.Duration, sessionsBeforeLongBreak int) string {
 	color := lipgloss.Color(th.Accent.String())
 	muted := lipgloss.Color(th.Muted.String())
 	title := "Deep Focus Duration"
-	rhythm := fmt.Sprintf("%s block · %s/%s internal rhythm", formatDuration(defaultDuration), formatDuration(workDuration), formatDuration(breakDuration))
+	rhythm := fmt.Sprintf(
+		"%s block · %s/%s/%s rhythm every %d",
+		formatDuration(defaultDuration),
+		formatDuration(workDuration),
+		formatDuration(shortBreakDuration),
+		formatDuration(longBreakDuration),
+		sessionsBeforeLongBreak,
+	)
 
 	options := []string{
 		"1 hour",

@@ -45,12 +45,12 @@ const (
 
 // Block coordinates segments for a focus session.
 type Block struct {
-	Mode                    Mode
-	Segments                []Segment
-	Index                   int
-	PlannedTotal            time.Duration
-	AutoAdvance             bool
-	CurrentSegment          Segment
+	Mode           Mode
+	Segments       []Segment
+	Index          int
+	PlannedTotal   time.Duration
+	AutoAdvance    bool
+	CurrentSegment Segment
 	// Quick focus generator state
 	SessionCount            int
 	SessionsBeforeLongBreak int
@@ -60,20 +60,29 @@ type Block struct {
 }
 
 // BuildDeepPlan splits a total duration into Pomodoro-style segments.
-func BuildDeepPlan(total, work, brk time.Duration) []Segment {
+func BuildDeepPlan(total, work, shortBreak, longBreak time.Duration, sessionsBeforeLongBreak int) []Segment {
 	if total <= work {
 		return []Segment{{Kind: SegmentKindWork, Duration: total}}
 	}
 
 	var segments []Segment
 	remaining := total
+	workSessions := 0
 
 	for remaining > 0 {
-		// Check if we can fit another Work segment of at least 10 minutes after this cycle
-		if remaining-work-brk >= 10*time.Minute {
+		breakKind := SegmentKindShortBreak
+		breakDuration := shortBreak
+		if sessionsBeforeLongBreak > 0 && (workSessions+1)%sessionsBeforeLongBreak == 0 {
+			breakKind = SegmentKindLongBreak
+			breakDuration = longBreak
+		}
+
+		// Keep the block from ending on a break or a tiny trailing focus sliver.
+		if remaining-work-breakDuration >= 10*time.Minute {
 			segments = append(segments, Segment{Kind: SegmentKindWork, Duration: work})
-			segments = append(segments, Segment{Kind: SegmentKindShortBreak, Duration: brk})
-			remaining -= (work + brk)
+			segments = append(segments, Segment{Kind: breakKind, Duration: breakDuration})
+			workSessions++
+			remaining -= work + breakDuration
 		} else {
 			// This is the final work segment, fold all remaining time here
 			segments = append(segments, Segment{Kind: SegmentKindWork, Duration: remaining})
@@ -99,19 +108,23 @@ func NewQuickBlock(work, short, long time.Duration, beforeLong int, autoAdvance 
 }
 
 // NewDeepBlock initializes a Deep Focus block.
-func NewDeepBlock(total, work, brk time.Duration, autoAdvance bool) *Block {
-	segs := BuildDeepPlan(total, work, brk)
+func NewDeepBlock(total, work, shortBreak, longBreak time.Duration, sessionsBeforeLongBreak int, autoAdvance bool) *Block {
+	segs := BuildDeepPlan(total, work, shortBreak, longBreak, sessionsBeforeLongBreak)
 	var current Segment
 	if len(segs) > 0 {
 		current = segs[0]
 	}
 	return &Block{
-		Mode:           ModeDeep,
-		Segments:       segs,
-		Index:          0,
-		PlannedTotal:   total,
-		AutoAdvance:    autoAdvance,
-		CurrentSegment: current,
+		Mode:                    ModeDeep,
+		Segments:                segs,
+		Index:                   0,
+		PlannedTotal:            total,
+		AutoAdvance:             autoAdvance,
+		SessionsBeforeLongBreak: sessionsBeforeLongBreak,
+		WorkDuration:            work,
+		ShortBreakDuration:      shortBreak,
+		LongBreakDuration:       longBreak,
+		CurrentSegment:          current,
 	}
 }
 

@@ -137,7 +137,7 @@ func TestGoldenDeepClassicRender(t *testing.T) {
 	model.gitBranch = "feature/deep-work"
 
 	// Select Deep Focus
-	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
 	model.runner = session.NewRunner(block)
 	model.selectedMode = session.ModeDeep
 
@@ -425,12 +425,64 @@ func keyEsc() tea.KeyMsg {
 	return tea.KeyMsg(tea.Key{Type: tea.KeyEsc})
 }
 
+func keyDown() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyDown}
+}
+
 func isQuitCmd(cmd tea.Cmd) bool {
 	if cmd == nil {
 		return false
 	}
 	_, ok := cmd().(tea.QuitMsg)
 	return ok
+}
+
+func TestDeepFocusFourHourUsesLongBreakCadence(t *testing.T) {
+	model := newKeyboardTestModel(t, "tokyo-night", "classic")
+
+	updated, _ := model.Update(keyRunes("d"))
+	model = updated.(*Model)
+	if model.inputMode != modeDurationPicker {
+		t.Fatalf("d did not open duration picker; input mode = %v", model.inputMode)
+	}
+	for i := 0; i < 5 && model.selectedDurationIdx != 3; i++ {
+		updated, _ = model.handleKeypress(keyDown())
+		model = updated.(*Model)
+	}
+	if model.selectedDurationIdx != 3 {
+		t.Fatalf("selected duration index = %d, want 3 for 4h", model.selectedDurationIdx)
+	}
+	updated, _ = model.handleKeypress(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(*Model)
+	if model.inputMode != modeNone {
+		t.Fatalf("enter did not close duration picker; input mode = %v", model.inputMode)
+	}
+
+	if model.selectedMode != session.ModeDeep {
+		t.Fatalf("selected mode = %s, want deep", model.selectedMode)
+	}
+	if model.deepDuration != 4*time.Hour {
+		t.Fatalf("deep duration = %v, want 4h", model.deepDuration)
+	}
+
+	longBreaks := 0
+	for _, seg := range model.runner.Block.Segments {
+		if seg.Kind == session.SegmentKindLongBreak {
+			longBreaks++
+			if seg.Duration != 15*time.Minute {
+				t.Fatalf("long break duration = %v, want 15m", seg.Duration)
+			}
+		}
+	}
+	if longBreaks == 0 {
+		t.Fatalf("4h deep focus plan has no long break: %#v", model.runner.Block.Segments)
+	}
+
+	updated, _ = model.Update(keyRunes("s"))
+	model = updated.(*Model)
+	if !model.runner.Timer.IsRunning {
+		t.Fatal("4h deep focus session did not start")
+	}
 }
 
 func TestThemeLoading(t *testing.T) {
@@ -759,7 +811,7 @@ func TestCombinationSweepNoPanics(t *testing.T) {
 				}
 
 				// Test Deep Focus Running
-				blockD := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+				blockD := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
 				model.runner = session.NewRunner(blockD)
 				model.selectedMode = session.ModeDeep
 				_ = model.runner.Start(timer.RealClock{})

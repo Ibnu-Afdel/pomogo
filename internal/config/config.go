@@ -61,9 +61,11 @@ type QuickFocusConfig struct {
 }
 
 type DeepFocusConfig struct {
-	WorkDuration       *int `toml:"work_duration"`
-	ShortBreakDuration *int `toml:"short_break_duration"`
-	DefaultDuration    *int `toml:"default_duration"`
+	WorkDuration            *int `toml:"work_duration"`
+	ShortBreakDuration      *int `toml:"short_break_duration"`
+	LongBreakDuration       *int `toml:"long_break_duration"`
+	SessionsBeforeLongBreak *int `toml:"sessions_before_long_break"`
+	DefaultDuration         *int `toml:"default_duration"`
 }
 
 // Profile represents a set of overrides for custom focus states.
@@ -208,6 +210,12 @@ func (c *Config) Validate() error {
 	if c.DeepFocus.ShortBreakDuration != nil && *c.DeepFocus.ShortBreakDuration <= 0 {
 		return errors.New("deep_focus.short_break_duration must be positive")
 	}
+	if c.DeepFocus.LongBreakDuration != nil && *c.DeepFocus.LongBreakDuration <= 0 {
+		return errors.New("deep_focus.long_break_duration must be positive")
+	}
+	if c.DeepFocus.SessionsBeforeLongBreak != nil && *c.DeepFocus.SessionsBeforeLongBreak <= 0 {
+		return errors.New("deep_focus.sessions_before_long_break must be positive")
+	}
 	if c.DeepFocus.DefaultDuration != nil && *c.DeepFocus.DefaultDuration <= 0 {
 		return errors.New("deep_focus.default_duration must be positive")
 	}
@@ -264,6 +272,8 @@ default_duration = 120
 # Internal rhythm for long blocks.
 work_duration = 25
 short_break_duration = 5
+long_break_duration = 15
+sessions_before_long_break = 4
 
 # Enable notifications on session transitions (default: true)
 notifications_enabled = true
@@ -385,6 +395,20 @@ func (c *Config) DeepFocusShortBreakDurationAsDuration() time.Duration {
 		return time.Duration(*c.DeepFocus.ShortBreakDuration) * time.Minute
 	}
 	return c.ShortBreakDurationAsDuration()
+}
+
+func (c *Config) DeepFocusLongBreakDurationAsDuration() time.Duration {
+	if c.DeepFocus.LongBreakDuration != nil {
+		return time.Duration(*c.DeepFocus.LongBreakDuration) * time.Minute
+	}
+	return c.QuickFocusLongBreakDurationAsDuration()
+}
+
+func (c *Config) DeepFocusSessionsBeforeLongBreak() int {
+	if c.DeepFocus.SessionsBeforeLongBreak != nil {
+		return *c.DeepFocus.SessionsBeforeLongBreak
+	}
+	return c.QuickFocusSessionsBeforeLongBreak()
 }
 
 func (c *Config) DeepFocusDefaultDurationAsDuration() time.Duration {

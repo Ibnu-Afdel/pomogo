@@ -97,7 +97,7 @@ func TestWriteWithBlockID(t *testing.T) {
 	}
 	defer manager.Remove()
 
-	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, true)
+	block := session.NewDeepBlock(2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
 	runner := session.NewRunner(block)
 	runner.Start(timer.RealClock{})
 	blockID := int64(42)

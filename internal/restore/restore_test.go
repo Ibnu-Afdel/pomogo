@@ -224,6 +224,8 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 		QuickAutoAdvance:             true,
 		DeepWork:                     50 * time.Minute,
 		DeepShortBreak:               10 * time.Minute,
+		DeepLongBreak:                20 * time.Minute,
+		DeepSessionsBeforeLongBreak:  3,
 	})
 	if err != nil {
 		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
@@ -239,7 +241,7 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 	}
 
 	// 2. Test Deep Focus Restore
-	blockD := session.NewDeepBlock(120*time.Minute, 25*time.Minute, 5*time.Minute, true)
+	blockD := session.NewDeepBlock(120*time.Minute, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
 	runnerD := session.NewRunner(blockD)
 	runnerD.Start(timer.RealClock{})
 
@@ -255,6 +257,8 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 		QuickAutoAdvance:             true,
 		DeepWork:                     50 * time.Minute,
 		DeepShortBreak:               10 * time.Minute,
+		DeepLongBreak:                20 * time.Minute,
+		DeepSessionsBeforeLongBreak:  3,
 	})
 	if err != nil {
 		t.Fatalf("RestoreRunnerWithDurations failed: %v", err)
@@ -267,6 +271,9 @@ func TestRestoreRunnerWithDurations(t *testing.T) {
 	}
 	if restoredD.Block.Segments[0].Duration != 50*time.Minute {
 		t.Errorf("expected deep restore to use configured 50m work duration, got %v", restoredD.Block.Segments[0].Duration)
+	}
+	if restoredD.Block.SessionsBeforeLongBreak != 3 {
+		t.Errorf("expected deep restore to use configured long break cadence, got %d", restoredD.Block.SessionsBeforeLongBreak)
 	}
 }
 

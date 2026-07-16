@@ -9,8 +9,8 @@ import (
 )
 
 func TestDurationPickerShowsDefaultAndRhythm(t *testing.T) {
-	got := DurationPicker(80, 24, theme.TokyoNight(), 1, 2*time.Hour, 25*time.Minute, 5*time.Minute)
-	if !strings.Contains(got, "2h block · 25m/5m internal rhythm") {
+	got := DurationPicker(80, 24, theme.TokyoNight(), 1, 2*time.Hour, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4)
+	if !strings.Contains(got, "2h block · 25m/5m/15m rhythm every 4") {
 		t.Fatalf("picker missing rhythm line: %q", got)
 	}
 	if !strings.Contains(got, "2 hours  default") {

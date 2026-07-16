@@ -39,29 +39,31 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// 1. Duration Picker Input Mode
 	if m.inputMode == modeDurationPicker {
-		switch msg.String() {
-		case "q", "ctrl+c":
+		switch {
+		case msg.String() == "q" || msg.String() == "ctrl+c":
 			m.persistOnQuit()
 			return m, tea.Quit
-		case "up":
+		case msg.Type == tea.KeyUp || msg.String() == "up":
 			m.selectedDurationIdx--
 			if m.selectedDurationIdx < 0 {
 				m.selectedDurationIdx = 4
 			}
-		case "down":
+		case msg.Type == tea.KeyDown || msg.String() == "down":
 			m.selectedDurationIdx++
 			if m.selectedDurationIdx > 4 {
 				m.selectedDurationIdx = 0
 			}
-		case "esc":
+		case msg.Type == tea.KeyEsc || msg.String() == "esc":
 			m.inputMode = modeNone
-		case "enter":
+		case msg.Type == tea.KeyEnter || msg.String() == "enter":
 			if m.selectedDurationIdx >= 0 && m.selectedDurationIdx <= 3 {
 				m.deepDuration = time.Duration(m.selectedDurationIdx+1) * time.Hour
 				block := session.NewDeepBlock(
 					m.deepDuration,
 					m.cfg.DeepFocusWorkDurationAsDuration(),
 					m.cfg.DeepFocusShortBreakDurationAsDuration(),
+					m.cfg.DeepFocusLongBreakDurationAsDuration(),
+					m.cfg.DeepFocusSessionsBeforeLongBreak(),
 					true,
 				)
 				m.runner = session.NewRunner(block)
@@ -95,6 +97,8 @@ func (m *Model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.deepDuration,
 				m.cfg.DeepFocusWorkDurationAsDuration(),
 				m.cfg.DeepFocusShortBreakDurationAsDuration(),
+				m.cfg.DeepFocusLongBreakDurationAsDuration(),
+				m.cfg.DeepFocusSessionsBeforeLongBreak(),
 				true,
 			)
 			m.runner = session.NewRunner(block)
@@ -302,6 +306,8 @@ func (m *Model) handleRestorePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			QuickAutoAdvance:             m.cfg.QuickFocusAutoAdvance(),
 			DeepWork:                     m.cfg.DeepFocusWorkDurationAsDuration(),
 			DeepShortBreak:               m.cfg.DeepFocusShortBreakDurationAsDuration(),
+			DeepLongBreak:                m.cfg.DeepFocusLongBreakDurationAsDuration(),
+			DeepSessionsBeforeLongBreak:  m.cfg.DeepFocusSessionsBeforeLongBreak(),
 		})
 		if err != nil {
 			m.restorePending = false

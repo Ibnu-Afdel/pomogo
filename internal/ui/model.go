@@ -191,6 +191,8 @@ func (m *Model) View() string {
 			m.cfg.DeepFocusDefaultDurationAsDuration(),
 			m.cfg.DeepFocusWorkDurationAsDuration(),
 			m.cfg.DeepFocusShortBreakDurationAsDuration(),
+			m.cfg.DeepFocusLongBreakDurationAsDuration(),
+			m.cfg.DeepFocusSessionsBeforeLongBreak(),
 		)
 	}
 

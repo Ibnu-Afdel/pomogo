@@ -94,6 +94,8 @@ type Durations struct {
 	QuickAutoAdvance             bool
 	DeepWork                     time.Duration
 	DeepShortBreak               time.Duration
+	DeepLongBreak                time.Duration
+	DeepSessionsBeforeLongBreak  int
 }
 
 // RestoreRunnerWithDurations reconstructs the runner and its block plan from state.
@@ -120,7 +122,7 @@ func RestoreRunnerWithDurations(d Durations) (*session.Runner, error) {
 	var block *session.Block
 	if state.Mode == "deep" {
 		plannedTotal := time.Duration(state.PlannedTotalSecs) * time.Second
-		block = session.NewDeepBlock(plannedTotal, d.DeepWork, d.DeepShortBreak, true)
+		block = session.NewDeepBlock(plannedTotal, d.DeepWork, d.DeepShortBreak, d.DeepLongBreak, d.DeepSessionsBeforeLongBreak, true)
 		block.Index = state.SegmentIndex
 		if block.Index >= 0 && block.Index < len(block.Segments) {
 			block.CurrentSegment = block.Segments[block.Index]

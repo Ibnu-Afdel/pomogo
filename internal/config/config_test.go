@@ -258,6 +258,12 @@ func TestWriteDefault(t *testing.T) {
 	if !contains(content, "default_duration = 120") {
 		t.Errorf("Config file missing deep_focus default_duration setting")
 	}
+	if !contains(content, "long_break_duration = 15") {
+		t.Errorf("Config file missing deep_focus long_break_duration setting")
+	}
+	if !contains(content, "sessions_before_long_break = 4") {
+		t.Errorf("Config file missing deep_focus sessions_before_long_break setting")
+	}
 
 	quickIdx := strings.Index(content, "[quick_focus]")
 	deepIdx := strings.Index(content, "[deep_focus]")
@@ -274,6 +280,12 @@ func TestWriteDefault(t *testing.T) {
 	}
 	if got := loaded.DeepFocusDefaultDurationAsDuration(); got != 2*time.Hour {
 		t.Errorf("Generated deep focus default = %v, want 2h", got)
+	}
+	if got := loaded.DeepFocusLongBreakDurationAsDuration(); got != 15*time.Minute {
+		t.Errorf("Generated deep focus long break = %v, want 15m", got)
+	}
+	if got := loaded.DeepFocusSessionsBeforeLongBreak(); got != 4 {
+		t.Errorf("Generated deep focus sessions before long break = %d, want 4", got)
 	}
 }
 
@@ -471,6 +483,8 @@ long_break_duration = 12
 default_duration = 180
 work_duration = 90
 short_break_duration = 10
+long_break_duration = 20
+sessions_before_long_break = 3
 `
 	os.WriteFile(configFile, []byte(content), 0644)
 
@@ -493,6 +507,12 @@ short_break_duration = 10
 	}
 	if cfg.DeepFocusShortBreakDurationAsDuration() != 10*time.Minute {
 		t.Errorf("got DeepFocusShortBreakDuration %v, want 10m", cfg.DeepFocusShortBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusLongBreakDurationAsDuration() != 20*time.Minute {
+		t.Errorf("got DeepFocusLongBreakDuration %v, want 20m", cfg.DeepFocusLongBreakDurationAsDuration())
+	}
+	if cfg.DeepFocusSessionsBeforeLongBreak() != 3 {
+		t.Errorf("got DeepFocusSessionsBeforeLongBreak %d, want 3", cfg.DeepFocusSessionsBeforeLongBreak())
 	}
 	if cfg.DeepFocusDefaultDurationAsDuration() != 180*time.Minute {
 		t.Errorf("got DeepFocusDefaultDuration %v, want 180m", cfg.DeepFocusDefaultDurationAsDuration())
@@ -520,6 +540,12 @@ sessions_before_long_break = 5
 	}
 	if cfgFallback.DeepFocusDefaultDurationAsDuration() != time.Hour {
 		t.Errorf("got DeepFocusDefaultDuration %v, want 1h fallback", cfgFallback.DeepFocusDefaultDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusLongBreakDurationAsDuration() != 10*time.Minute {
+		t.Errorf("got DeepFocusLongBreakDuration %v, want 10m fallback", cfgFallback.DeepFocusLongBreakDurationAsDuration())
+	}
+	if cfgFallback.DeepFocusSessionsBeforeLongBreak() != 5 {
+		t.Errorf("got DeepFocusSessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.DeepFocusSessionsBeforeLongBreak())
 	}
 	if cfgFallback.QuickFocusSessionsBeforeLongBreak() != 5 {
 		t.Errorf("got SessionsBeforeLongBreak %d, want 5 fallback", cfgFallback.QuickFocusSessionsBeforeLongBreak())

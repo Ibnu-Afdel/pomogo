@@ -52,6 +52,29 @@ func TestBuildDeepPlan(t *testing.T) {
 			},
 		},
 		{
+			name:  "4 Hour Block (25/5/15)",
+			total: 240 * time.Minute,
+			work:  25 * time.Minute,
+			brk:   5 * time.Minute,
+			expected: []Segment{
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindLongBreak, Duration: 15 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 25 * time.Minute},
+				{Kind: SegmentKindShortBreak, Duration: 5 * time.Minute},
+				{Kind: SegmentKindWork, Duration: 20 * time.Minute},
+			},
+		},
+		{
 			name:  "45 Min Block (25/5)",
 			total: 45 * time.Minute,
 			work:  25 * time.Minute,
@@ -84,7 +107,7 @@ func TestBuildDeepPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildDeepPlan(tt.total, tt.work, tt.brk)
+			result := BuildDeepPlan(tt.total, tt.work, tt.brk, 15*time.Minute, 4)
 			if len(result) != len(tt.expected) {
 				t.Fatalf("got plan length %d, want %d", len(result), len(tt.expected))
 			}
@@ -104,7 +127,7 @@ func TestBuildDeepPlanProperties(t *testing.T) {
 	// Test a wide range of durations from 10 minutes to 5 hours
 	for m := 10; m <= 300; m++ {
 		total := time.Duration(m) * time.Minute
-		plan := BuildDeepPlan(total, work, brk)
+		plan := BuildDeepPlan(total, work, brk, 15*time.Minute, 4)
 
 		if len(plan) == 0 {
 			t.Fatalf("Plan empty for total = %v", total)
@@ -196,7 +219,7 @@ func TestRunnerQuickModeAutoAdvance(t *testing.T) {
 }
 
 func TestRunnerDeepModeAutoAdvance(t *testing.T) {
-	block := NewDeepBlock(60*time.Minute, 25*time.Minute, 5*time.Minute, true)
+	block := NewDeepBlock(60*time.Minute, 25*time.Minute, 5*time.Minute, 15*time.Minute, 4, true)
 	runner := NewRunner(block)
 	clock := &mockClock{now: time.Now()}
 
