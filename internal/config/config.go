@@ -174,7 +174,9 @@ func (c *Config) Validate() error {
 
 	validLayouts := map[string]bool{
 		"classic": true, "minimal": true, "centered": true,
-		"compact": true, "retro": true, "random": true, "daily": true,
+		"compact": true, "retro": true, "dashboard": true,
+		"monolith": true, "tinybar": true, "terminal-rice": true,
+		"random": true, "daily": true,
 		"": true,
 	}
 	if !validLayouts[c.Layout] {

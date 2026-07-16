@@ -61,7 +61,7 @@ func ResolveLayout(name string, width, height int) (string, Layout) {
 	}
 
 	// Otherwise, find the first layout that fits in preference order
-	order := []string{"minimal", "compact", "centered", "classic", "retro"}
+	order := []string{"tinybar", "minimal", "compact", "centered", "classic", "dashboard", "monolith", "retro", "terminal-rice"}
 	for _, lName := range order {
 		spec, exists := Registry[lName]
 		if exists && width >= spec.MinWidth && height >= spec.MinHeight {
@@ -75,7 +75,7 @@ func ResolveLayout(name string, width, height int) (string, Layout) {
 
 // ResolveLayoutName resolves "random" and "daily" to a concrete layout name.
 func ResolveLayoutName(configured string) string {
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice"}
 	if configured == "random" {
 		importTimeSeed := time.Now().UnixNano() + int64(os.Getpid())
 		idx := int(importTimeSeed % int64(len(layouts)))

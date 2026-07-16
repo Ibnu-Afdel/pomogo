@@ -474,7 +474,7 @@ func (m *Model) cycleTheme() {
 }
 
 func (m *Model) cycleLayout() {
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice"}
 	idx := -1
 	for i, l := range layouts {
 		if l == m.currentLayoutName {
