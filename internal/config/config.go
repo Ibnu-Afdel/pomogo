@@ -242,42 +242,28 @@ func WriteDefault() error {
 		return fmt.Errorf("config file already exists at %s", path)
 	}
 
-	// Create a default config with comments
+	// Create a default config with comments.
 	content := `# PomoGo Configuration
-# This file configures the Pomodoro timer behavior.
+# Quick Focus is for immediate 25/5 cycles.
+# Deep Focus is for longer blocks with the rhythm handled behind the scene.
 
-# Work session duration in minutes (default: 25)
-work_duration = 25
-
-# Short break duration in minutes (default: 5)
-short_break_duration = 5
-
-# Long break duration in minutes (default: 15)
-long_break_duration = 15
-
-# Number of work sessions before a long break (default: 4)
-sessions_before_long_break = 4
-
-# Theme: "tokyo-night", "catppuccin", "gruvbox", "rose-pine", etc. (default: tokyo-night)
-theme = "tokyo-night"
-
-# Layout: "classic", "minimal", "centered", "compact", "retro" (default: classic)
-layout = "classic"
-
-# Effects: "none", "stars", "snow", "rain", "random" (default: none)
+theme = "daily"
+layout = "daily"
 effects = "none"
 
 [quick_focus]
-# Continue automatically from focus to break and back again (default: true)
+work_duration = 25
+short_break_duration = 5
+long_break_duration = 15
+sessions_before_long_break = 4
 auto_advance = true
 
 [deep_focus]
-# Default Deep Focus block duration in minutes (default: 60)
-default_duration = 60
-# Internal segment durations for long blocks
+# Default Deep Focus block duration in minutes.
+default_duration = 120
+# Internal rhythm for long blocks.
 work_duration = 25
 short_break_duration = 5
-
 
 # Enable notifications on session transitions (default: true)
 notifications_enabled = true

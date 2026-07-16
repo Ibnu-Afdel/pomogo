@@ -237,20 +237,43 @@ func TestWriteDefault(t *testing.T) {
 	}
 
 	content := string(data)
-	if !contains(content, "work_duration = 25") {
-		t.Errorf("Config file missing work_duration setting")
-	}
-	if !contains(content, "theme = \"tokyo-night\"") {
+	if !contains(content, "theme = \"daily\"") {
 		t.Errorf("Config file missing theme setting")
+	}
+	if !contains(content, "layout = \"daily\"") {
+		t.Errorf("Config file missing layout setting")
 	}
 	if !contains(content, "[quick_focus]") {
 		t.Errorf("Config file missing quick_focus section")
 	}
+	if !contains(content, "work_duration = 25") {
+		t.Errorf("Config file missing quick_focus work_duration setting")
+	}
+	if !contains(content, "sessions_before_long_break = 4") {
+		t.Errorf("Config file missing quick_focus sessions_before_long_break setting")
+	}
 	if !contains(content, "auto_advance = true") {
 		t.Errorf("Config file missing quick_focus auto_advance setting")
 	}
-	if !contains(content, "default_duration = 60") {
+	if !contains(content, "default_duration = 120") {
 		t.Errorf("Config file missing deep_focus default_duration setting")
+	}
+
+	quickIdx := strings.Index(content, "[quick_focus]")
+	deepIdx := strings.Index(content, "[deep_focus]")
+	if quickIdx < 0 || deepIdx < 0 || quickIdx > deepIdx {
+		t.Errorf("Config file should present quick_focus before deep_focus")
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Generated config should load: %v", err)
+	}
+	if loaded.Theme != "daily" || loaded.Layout != "daily" {
+		t.Errorf("Generated config identity = %q/%q, want daily/daily", loaded.Theme, loaded.Layout)
+	}
+	if got := loaded.DeepFocusDefaultDurationAsDuration(); got != 2*time.Hour {
+		t.Errorf("Generated deep focus default = %v, want 2h", got)
 	}
 }
 
