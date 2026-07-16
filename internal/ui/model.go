@@ -490,7 +490,7 @@ func (m *Model) cycleTheme() {
 }
 
 func (m *Model) cycleLayout() {
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice", "focus-stack", "command-center"}
 	idx := -1
 	for i, l := range layouts {
 		if l == m.currentLayoutName {
@@ -503,7 +503,7 @@ func (m *Model) cycleLayout() {
 }
 
 func (m *Model) cycleEffects() {
-	effects := []string{"none", "stars", "snow", "rain"}
+	effects := []string{"none", "stars", "snow", "rain", "embers", "scanline"}
 	idx := -1
 	for i, eff := range effects {
 		if eff == m.currentEffectsName {

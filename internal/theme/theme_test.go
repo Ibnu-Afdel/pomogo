@@ -38,7 +38,7 @@ func TestRegistry(t *testing.T) {
 		"tokyo-night", "catppuccin", "catppuccin-latte", "gruvbox",
 		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
 		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
-		"high-contrast",
+		"high-contrast", "github-dark", "material-ocean", "forest-dawn",
 	}
 
 	for _, name := range expectedThemes {
@@ -80,8 +80,8 @@ func TestGet(t *testing.T) {
 func TestList(t *testing.T) {
 	themes := List()
 
-	if len(themes) != 16 {
-		t.Errorf("List() returned %d themes, want 16", len(themes))
+	if len(themes) != 19 {
+		t.Errorf("List() returned %d themes, want 19", len(themes))
 	}
 }
 

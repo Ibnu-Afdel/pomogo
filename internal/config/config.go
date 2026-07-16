@@ -182,6 +182,7 @@ func (c *Config) Validate() error {
 		"classic": true, "minimal": true, "centered": true,
 		"compact": true, "retro": true, "dashboard": true,
 		"monolith": true, "tinybar": true, "terminal-rice": true,
+		"focus-stack": true, "command-center": true,
 		"random": true, "daily": true,
 		"": true,
 	}
@@ -190,7 +191,7 @@ func (c *Config) Validate() error {
 	}
 
 	validEffects := map[string]bool{
-		"none": true, "stars": true, "snow": true, "rain": true, "random": true, "": true,
+		"none": true, "stars": true, "snow": true, "rain": true, "embers": true, "scanline": true, "random": true, "": true,
 	}
 	if !validEffects[c.Effects] {
 		return fmt.Errorf("unknown effects: %q", c.Effects)

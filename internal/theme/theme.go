@@ -51,6 +51,9 @@ var Registry = map[string]*Theme{
 	"solarized-dark":   SolarizedDark(),
 	"oxocarbon":        Oxocarbon(),
 	"high-contrast":    HighContrast(),
+	"github-dark":      GitHubDark(),
+	"material-ocean":   MaterialOcean(),
+	"forest-dawn":      ForestDawn(),
 }
 
 // Get retrieves a theme by name. Returns default (Tokyo Night) if not found.
@@ -424,6 +427,66 @@ func HighContrast() *Theme {
 		ProgressTrack: "#3a3a3a",
 		Ambient:       "#262626",
 		Description:   "Maximum contrast dark theme for readability.",
+	}
+}
+
+func GitHubDark() *Theme {
+	return &Theme{
+		Name:          "github-dark",
+		Work:          "#ff7b72",
+		Break:         "#79c0ff",
+		LongBreak:     "#a5d6ff",
+		Idle:          "#8b949e",
+		Accent:        "#d2a8ff",
+		Background:    "#0d1117",
+		Text:          "#e6edf3",
+		Muted:         "#8b949e",
+		Subtle:        "#161b22",
+		Border:        "#30363d",
+		ProgressFill:  "#58a6ff",
+		ProgressTrack: "#30363d",
+		Ambient:       "#21262d",
+		Description:   "GitHub-inspired dark theme with crisp code-review contrast.",
+	}
+}
+
+func MaterialOcean() *Theme {
+	return &Theme{
+		Name:          "material-ocean",
+		Work:          "#ff5370",
+		Break:         "#82aaff",
+		LongBreak:     "#c3e88d",
+		Idle:          "#b2ccd6",
+		Accent:        "#ffcb6b",
+		Background:    "#0f111a",
+		Text:          "#eeffff",
+		Muted:         "#b2ccd6",
+		Subtle:        "#1f2233",
+		Border:        "#3b4252",
+		ProgressFill:  "#89ddff",
+		ProgressTrack: "#2f334d",
+		Ambient:       "#252a3a",
+		Description:   "Material-style ocean palette with bright but readable accents.",
+	}
+}
+
+func ForestDawn() *Theme {
+	return &Theme{
+		Name:          "forest-dawn",
+		Work:          "#f26d6d",
+		Break:         "#6fb3d2",
+		LongBreak:     "#9fd356",
+		Idle:          "#c6d3b8",
+		Accent:        "#f7c65f",
+		Background:    "#10140f",
+		Text:          "#edf4e4",
+		Muted:         "#c6d3b8",
+		Subtle:        "#1d2519",
+		Border:        "#46543f",
+		ProgressFill:  "#9fd356",
+		ProgressTrack: "#2b3327",
+		Ambient:       "#283224",
+		Description:   "Earthy dark theme with balanced green, blue, and gold signals.",
 	}
 }
 

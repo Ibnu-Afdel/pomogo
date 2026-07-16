@@ -37,6 +37,9 @@ func RenderAmbient(effect string, tickCount int, f Frame, th *theme.Theme, layou
 
 	rain1 := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Ambient.String())).Render("│")
 	rain2 := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Ambient.String())).Render("/")
+	ember1 := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Accent.String())).Render(".")
+	ember2 := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Work.String())).Render("·")
+	scan := lipgloss.NewStyle().Foreground(lipgloss.Color(th.Ambient.String())).Render("─")
 
 	space := " "
 
@@ -79,6 +82,23 @@ func RenderAmbient(effect string, tickCount int, f Frame, th *theme.Theme, layou
 						char = rain2
 					} else {
 						char = rain1
+					}
+				}
+			case "embers":
+				offset := hash(x, 0, 121)
+				row := (uint32(f.Height) + offset - uint32(tickCount%max(1, f.Height))) % uint32(f.Height)
+				if y == int(row) && hash(x, y, 131)%100 < 7 {
+					if hash(x, y, 141)%2 == 0 {
+						char = ember1
+					} else {
+						char = ember2
+					}
+				}
+			case "scanline":
+				row := tickCount % max(1, f.Height)
+				if y == row || y == (row+f.Height/2)%max(1, f.Height) {
+					if hash(x, y, 151)%100 < 65 {
+						char = scan
 					}
 				}
 			}
@@ -173,7 +193,7 @@ func overlayLine(bg []string, content string) string {
 
 // ResolveEffectsName resolves "random" to a concrete effect name.
 func ResolveEffectsName(configured string) string {
-	effects := []string{"none", "stars", "snow", "rain"}
+	effects := []string{"none", "stars", "snow", "rain", "embers", "scanline"}
 	if configured == "random" {
 		importTimeSeed := time.Now().UnixNano() + int64(os.Getpid())
 		idx := int(importTimeSeed % int64(len(effects)))

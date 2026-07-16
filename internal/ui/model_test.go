@@ -866,7 +866,7 @@ func TestCombinationSweepNoPanics(t *testing.T) {
 		"rose-pine", "everforest", "nord", "dracula", "kanagawa", "carbon",
 		"night-owl", "one-dark", "ayu-mirage", "solarized-dark", "oxocarbon",
 	}
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "dashboard", "monolith", "tinybar", "terminal-rice", "focus-stack", "command-center"}
 	sizes := []struct{ w, h int }{
 		{60, 18},
 		{200, 50},
@@ -962,7 +962,7 @@ func verifyGolden(t *testing.T, filename string, got string) {
 
 func TestGoldenZenLayouts(t *testing.T) {
 	cfg := config.Default()
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "focus-stack", "command-center"}
 
 	for _, lName := range layouts {
 		t.Run(lName, func(t *testing.T) {
@@ -1034,7 +1034,7 @@ func TestVerbLabelTaskKeywords(t *testing.T) {
 
 func TestGoldenProjectIcon(t *testing.T) {
 	cfg := config.Default()
-	layouts := []string{"classic", "minimal", "centered", "compact", "retro"}
+	layouts := []string{"classic", "minimal", "centered", "compact", "retro", "focus-stack", "command-center"}
 
 	for _, lName := range layouts {
 		t.Run(lName, func(t *testing.T) {
